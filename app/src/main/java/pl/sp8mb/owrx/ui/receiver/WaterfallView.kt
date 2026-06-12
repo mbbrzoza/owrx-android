@@ -123,40 +123,41 @@ class WaterfallView(context: Context) : View(context) {
         postInvalidateOnAnimation()
     }
 
+    private var sortBuf = FloatArray(0)
+
+    /**
+     * Percentile-based palette targets, like the web auto-adjust: floor from
+     * the 15th percentile, ceiling from the 98th — a single strong carrier
+     * no longer stretches (washes out) the whole palette.
+     */
+    private fun levelTargets(frame: FloatArray): Pair<Float, Float> {
+        if (sortBuf.size != frame.size) sortBuf = FloatArray(frame.size)
+        frame.copyInto(sortBuf)
+        sortBuf.sort()
+        val p15 = sortBuf[(sortBuf.size * 15) / 100]
+        val p98 = sortBuf[(sortBuf.size * 98) / 100]
+        var min = p15 - 3f
+        var max = p98 + 12f
+        if (max - min < 20f) max = min + 20f
+        return min to max
+    }
+
     /** Instantly re-fit the colour range to the latest frame. */
     fun snapLevels() {
         val frame = lastFrame
         if (frame.isEmpty()) return
-        var max = -Float.MAX_VALUE
-        var sum = 0f
-        for (v in frame) {
-            if (v > max) max = v
-            sum += v
-        }
-        val mean = sum / frame.size
-        minDb = mean - 10f
-        maxDb = max + 10f
-        if (maxDb - minDb < 20f) maxDb = minDb + 20f
+        val (min, max) = levelTargets(frame)
+        minDb = min
+        maxDb = max
         invalidate()
     }
 
     private fun updateLevels(frame: FloatArray) {
-        // robust percentile-ish estimate without sorting the whole frame each time
-        var min = Float.MAX_VALUE
-        var max = -Float.MAX_VALUE
-        var sum = 0f
-        for (v in frame) {
-            if (v < min) min = v
-            if (v > max) max = v
-            sum += v
-        }
-        val mean = sum / frame.size
-        val targetMin = mean - 10f
-        val targetMax = max + 10f
+        val (targetMin, targetMax) = levelTargets(frame)
         // asymmetric follow: expand range fast, contract very slowly —
         // symmetric per-frame tracking makes row brightness pump (striped waterfall)
-        minDb += (targetMin - minDb) * if (targetMin < minDb) 0.5f else 0.005f
-        maxDb += (targetMax - maxDb) * if (targetMax > maxDb) 0.5f else 0.005f
+        minDb += (targetMin - minDb) * if (targetMin < minDb) 0.5f else 0.01f
+        maxDb += (targetMax - maxDb) * if (targetMax > maxDb) 0.5f else 0.01f
         if (maxDb - minDb < 20f) maxDb = minDb + 20f
     }
 

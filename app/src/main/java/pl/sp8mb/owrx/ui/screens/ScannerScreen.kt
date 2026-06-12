@@ -16,7 +16,9 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,6 +27,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -109,12 +112,40 @@ fun ScannerScreen(vm: ScannerViewModel = hiltViewModel()) {
             }
         }
         if (scanMode == ScanModeUi.FAVORITES) {
-            Text(
-                "Skan pamięciowy: nasłuch tylko na zapisanych zakładkach (z trybem z zakładki). " +
-                    "Profile przełączane automatycznie wg zakładek.",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray,
-            )
+            val selectedFavs by vm.selectedFavorites.collectAsState()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Wybierz zakładki (${selectedFavs.size}/${favorites.size}):",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { vm.selectAllFavorites(true) }, enabled = !running) { Text("Wszystkie") }
+                TextButton(onClick = { vm.selectAllFavorites(false) }, enabled = !running) { Text("Żadna") }
+            }
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 160.dp),
+            ) {
+                items(favorites.sortedBy { it.freqHz }, key = { it.freqHz }) { fav ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Checkbox(
+                            checked = fav.freqHz in selectedFavs,
+                            onCheckedChange = { if (!running) vm.toggleFavorite(fav.freqHz) },
+                            enabled = !running,
+                        )
+                        Text(
+                            "${fav.name} — %.4f MHz".format(fav.freqHz / 1e6) +
+                                (fav.modulation?.let { " ${it.uppercase()}" } ?: ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                }
+            }
         }
         startError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
 
