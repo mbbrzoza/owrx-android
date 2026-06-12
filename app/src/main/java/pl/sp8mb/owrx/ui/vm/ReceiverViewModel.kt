@@ -71,6 +71,15 @@ class ReceiverViewModel @Inject constructor(
 
     fun sendChat(text: String) = session.sendChat(text, "owrx-android")
 
+    // ── digimodes (POCSAG/APRS/SSTV/... via secondary demod) ──
+    val digiModes: StateFlow<List<OwrxSession.ModeInfo>> = session.modes
+        .map { list -> list.filter { !it.analog } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val secondaryMod = session.secondaryMod
+    val digiMessages = session.digiMessages
+
+    fun setDigimode(mod: String?) = session.setSecondaryMod(mod)
+
     val muted = audioPipeline.userMuted
     val volume = audioPipeline.volume
 

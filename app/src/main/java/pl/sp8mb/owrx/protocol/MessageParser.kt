@@ -51,6 +51,7 @@ object MessageParser {
                 "sdr_error" -> ServerMessage.SdrError(obj["value"]!!.jsonPrimitive.content)
                 "demodulator_error" -> ServerMessage.DemodulatorError(obj["value"]!!.jsonPrimitive.content)
                 "secondary_config" -> ServerMessage.SecondaryConfig(obj["value"]!!.jsonObject)
+                "secondary_demod" -> ServerMessage.SecondaryDemod(obj["value"]!!)
                 else -> ServerMessage.Unknown(type, obj)
             }
         } catch (e: Exception) {

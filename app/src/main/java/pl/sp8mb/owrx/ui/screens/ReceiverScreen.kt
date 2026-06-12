@@ -79,6 +79,7 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
     var showAddFavorite by remember { mutableStateOf(false) }
     var showFreqDialog by remember { mutableStateOf(false) }
     var showChat by remember { mutableStateOf(false) }
+    var showDigi by remember { mutableStateOf(false) }
     var waterfall by remember { mutableStateOf<WaterfallView?>(null) }
 
     LaunchedEffect(waterfall) {
@@ -246,6 +247,39 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                         label = { Text(mod.uppercase()) },
                     )
                 }
+
+                // digimode (secondary demod) picker
+                val digiModes by vm.digiModes.collectAsState()
+                val activeDigi by vm.secondaryMod.collectAsState()
+                if (digiModes.isNotEmpty()) {
+                    var digiMenu by remember { mutableStateOf(false) }
+                    Box {
+                        FilterChip(
+                            selected = activeDigi != null,
+                            onClick = { digiMenu = true },
+                            label = { Text(activeDigi?.uppercase() ?: "DIGI") },
+                        )
+                        androidx.compose.material3.DropdownMenu(
+                            expanded = digiMenu,
+                            onDismissRequest = { digiMenu = false },
+                        ) {
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("— wyłącz —") },
+                                onClick = { digiMenu = false; vm.setDigimode(null); showDigi = false },
+                            )
+                            digiModes.forEach { dm ->
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(dm.name) },
+                                    onClick = {
+                                        digiMenu = false
+                                        vm.setDigimode(dm.modulation)
+                                        showDigi = true
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // ── single toolbar: mute | SQ | AGC/gain | NR | REC | colours ──
@@ -402,6 +436,41 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         style = MaterialTheme.typography.bodySmall,
                     )
+                }
+            }
+        }
+
+        val activeDigiMod by vm.secondaryMod.collectAsState()
+        if (showDigi && activeDigiMod != null) {
+            val digiMsgs by vm.digiMessages.collectAsState()
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(200.dp),
+                color = Color(0xF0141A20),
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "${activeDigiMod?.uppercase()} — ${digiMsgs.size} wiadomości",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        TextButton(onClick = { showDigi = false }) { Text("Ukryj") }
+                    }
+                    LazyColumn(reverseLayout = true, modifier = Modifier.fillMaxSize()) {
+                        items(digiMsgs.reversed()) { line ->
+                            Text(
+                                line,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        }
+                    }
                 }
             }
         }

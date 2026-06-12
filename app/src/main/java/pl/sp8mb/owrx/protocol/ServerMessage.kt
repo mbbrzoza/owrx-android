@@ -27,5 +27,6 @@ sealed class ServerMessage {
     data class SdrError(val message: String) : ServerMessage()
     data class DemodulatorError(val message: String) : ServerMessage()
     data class SecondaryConfig(val value: JsonObject) : ServerMessage()
+    data class SecondaryDemod(val value: JsonElement) : ServerMessage()
     data class Unknown(val type: String, val raw: JsonObject) : ServerMessage()
 }

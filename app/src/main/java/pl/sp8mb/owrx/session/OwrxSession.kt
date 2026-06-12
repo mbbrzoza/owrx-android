@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -97,6 +98,12 @@ class OwrxSession @Inject constructor(
     private val _modes = MutableStateFlow<List<ModeInfo>>(emptyList())
     val modes: StateFlow<List<ModeInfo>> = _modes.asStateFlow()
 
+    private val _digiMessages = MutableStateFlow<List<String>>(emptyList())
+    val digiMessages: StateFlow<List<String>> = _digiMessages.asStateFlow()
+
+    private val _secondaryMod = MutableStateFlow<String?>(null)
+    val secondaryMod: StateFlow<String?> = _secondaryMod.asStateFlow()
+
     /** Learned profile bands: fullProfileId → (centerFreq, sampRate). */
     private val _profileRanges = MutableStateFlow<Map<String, Pair<Long, Int>>>(emptyMap())
     val profileRanges: StateFlow<Map<String, Pair<Long, Int>>> = _profileRanges.asStateFlow()
@@ -125,6 +132,8 @@ class OwrxSession @Inject constructor(
 
     /** Wall-clock ms of the last frame from the server; watchdog uses it. */
     private val lastRxAt = AtomicLong(0)
+
+    private val SECONDARY_TIME = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
 
     private var basicAuth: String? = null
 
@@ -183,6 +192,32 @@ class OwrxSession @Inject constructor(
             highCut?.let { put("high_cut", it) }
         }
         if (params.isNotEmpty()) send(ClientCommand.dspParams(params))
+    }
+
+    /** Enable a digimode secondary demodulator (POCSAG/APRS/SSTV/...) or disable with null. */
+    fun setSecondaryMod(mod: String?) {
+        _secondaryMod.value = mod
+        _digiMessages.value = emptyList()
+        send(ClientCommand.dspParams(mapOf("secondary_mod" to (mod ?: false), "secondary_offset_freq" to 0)))
+    }
+
+    private fun formatDigiMessage(value: kotlinx.serialization.json.JsonElement): String? {
+        val o = value as? JsonObject ?: return value.toString().take(200)
+        fun s(k: String) = (o[k] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+        val time = SECONDARY_TIME.format(java.util.Date())
+        // POCSAG: address + message
+        s("address")?.let { return "$time  POCSAG $it: ${s("message") ?: ""}" }
+        // packet/APRS: mode + source + comment
+        val mode = s("mode")
+        if (mode != null && (mode == "APRS" || mode == "AIS" || mode == "SONDE")) {
+            val src = s("source") ?: s("item") ?: s("object") ?: "?"
+            val comment = s("comment") ?: s("message") ?: ""
+            return "$time  $mode $src ${comment}".trim()
+        }
+        // WSJT / other digimode with a message field
+        s("msg")?.let { return "$time  ${mode ?: "DIGI"} $it" }
+        s("message")?.let { return "$time  ${mode ?: "DIGI"} $it" }
+        return null
     }
 
     fun sendChat(text: String, name: String?) {
@@ -312,6 +347,11 @@ class OwrxSession @Inject constructor(
             is ServerMessage.Bookmarks -> _bookmarks.value = msg.value
             is ServerMessage.DialFrequencies -> _dialFrequencies.value = msg.value
             is ServerMessage.Modes -> _modes.value = parseModes(msg.value)
+            is ServerMessage.SecondaryDemod -> {
+                formatDigiMessage(msg.value)?.let { line ->
+                    _digiMessages.value = (_digiMessages.value + line).takeLast(200)
+                }
+            }
             is ServerMessage.Clients -> _clientCount.value = msg.count
             is ServerMessage.ChatMessage ->
                 _chat.value = (_chat.value + Chat(msg.name, msg.text, msg.color)).takeLast(100)
