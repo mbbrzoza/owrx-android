@@ -10,16 +10,20 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import pl.sp8mb.owrx.data.db.ScanHitDao
 import pl.sp8mb.owrx.data.db.ScanHitEntity
+import pl.sp8mb.owrx.scanner.ScanMode
 import pl.sp8mb.owrx.scanner.ScannerConfig
 import pl.sp8mb.owrx.scanner.ScannerEngine
 import pl.sp8mb.owrx.session.OwrxSession
 import javax.inject.Inject
+
+enum class ScanModeUi { FULL_BAND, RANGE, FAVORITES }
 
 @HiltViewModel
 class ScannerViewModel @Inject constructor(
     private val engine: ScannerEngine,
     private val scanHitDao: ScanHitDao,
     private val session: OwrxSession,
+    prefs: pl.sp8mb.owrx.data.prefs.UserPreferences,
 ) : ViewModel() {
 
     val status = engine.status
@@ -29,7 +33,13 @@ class ScannerViewModel @Inject constructor(
     val hits: StateFlow<List<ScanHitEntity>> = scanHitDao.all()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    val favorites: StateFlow<List<pl.sp8mb.owrx.data.prefs.Favorite>> = prefs.favorites
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     // UI-configurable parameters
+    val scanModeUi = MutableStateFlow(ScanModeUi.FULL_BAND)
+    val rangeStartMhz = MutableStateFlow("")
+    val rangeEndMhz = MutableStateFlow("")
     val thresholdDb = MutableStateFlow(12f)
     val rasterHz = MutableStateFlow(12500)
     val selectedProfiles = MutableStateFlow<List<String>>(emptyList())
@@ -59,12 +69,45 @@ class ScannerViewModel @Inject constructor(
         }
     }
 
+    /** Null when the configuration is valid; otherwise a user-facing error. */
+    val startError = MutableStateFlow<String?>(null)
+
     fun start() {
+        startError.value = null
+        val mode = when (scanModeUi.value) {
+            ScanModeUi.FULL_BAND -> ScanMode.FullBand
+            ScanModeUi.RANGE -> {
+                val start = rangeStartMhz.value.replace(',', '.').toDoubleOrNull()
+                val end = rangeEndMhz.value.replace(',', '.').toDoubleOrNull()
+                if (start == null || end == null || end <= start) {
+                    startError.value = "Podaj poprawny zakres w MHz (od < do)"
+                    return
+                }
+                ScanMode.Range((start * 1e6).toLong(), (end * 1e6).toLong())
+            }
+            ScanModeUi.FAVORITES -> {
+                val targets = favorites.value.map {
+                    ScanMode.Favorites.Target(it.freqHz, it.name, it.modulation, it.profileId)
+                }
+                if (targets.isEmpty()) {
+                    startError.value = "Brak zakładek do skanowania"
+                    return
+                }
+                ScanMode.Favorites(targets)
+            }
+        }
+        // favorites scan derives its profile plan from the targets' profiles
+        val plan = if (scanModeUi.value == ScanModeUi.FAVORITES) {
+            favorites.value.mapNotNull { it.profileId }.distinct().takeIf { it.size > 1 } ?: emptyList()
+        } else {
+            selectedProfiles.value
+        }
         engine.start(
             ScannerConfig(
                 thresholdDb = thresholdDb.value,
                 rasterHz = rasterHz.value,
-                profilePlan = selectedProfiles.value,
+                mode = mode,
+                profilePlan = plan,
             )
         )
     }

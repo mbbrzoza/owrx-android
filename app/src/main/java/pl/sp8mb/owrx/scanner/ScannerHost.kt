@@ -11,7 +11,7 @@ interface ScannerHost {
     val fft: Flow<FloatArray>
     val radioConfig: StateFlow<RadioConfig>
     val backoff: StateFlow<String?>
-    fun tune(offsetFreq: Int, squelchLevel: Float?)
+    fun tune(offsetFreq: Int, squelchLevel: Float?, mod: String? = null)
     fun selectProfile(id: String)
     fun now(): Long
 }
@@ -22,8 +22,8 @@ class SessionScannerHost @Inject constructor(
     override val fft get() = session.fft
     override val radioConfig get() = session.radioConfig
     override val backoff get() = session.backoff
-    override fun tune(offsetFreq: Int, squelchLevel: Float?) =
-        session.setDsp(offsetFreq = offsetFreq, squelchLevel = squelchLevel)
+    override fun tune(offsetFreq: Int, squelchLevel: Float?, mod: String?) =
+        session.setDsp(offsetFreq = offsetFreq, squelchLevel = squelchLevel, mod = mod)
 
     override fun selectProfile(id: String) = session.selectProfile(id)
     override fun now(): Long = System.currentTimeMillis()

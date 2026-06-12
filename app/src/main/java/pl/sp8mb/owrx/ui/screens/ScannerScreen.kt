@@ -22,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import pl.sp8mb.owrx.scanner.ScanState
+import pl.sp8mb.owrx.ui.vm.ScanModeUi
 import pl.sp8mb.owrx.ui.vm.ScannerViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -64,6 +66,57 @@ fun ScannerScreen(vm: ScannerViewModel = hiltViewModel()) {
                 Text(" Pomiń")
             }
         }
+
+        // ── scan mode ──
+        val scanMode by vm.scanModeUi.collectAsState()
+        val rangeStart by vm.rangeStartMhz.collectAsState()
+        val rangeEnd by vm.rangeEndMhz.collectAsState()
+        val favorites by vm.favorites.collectAsState()
+        val startError by vm.startError.collectAsState()
+
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(
+                ScanModeUi.FULL_BAND to "Całe pasmo",
+                ScanModeUi.RANGE to "Zakres",
+                ScanModeUi.FAVORITES to "Zakładki (${favorites.size})",
+            ).forEach { (mode, label) ->
+                FilterChip(
+                    selected = scanMode == mode,
+                    onClick = { if (!running) vm.scanModeUi.value = mode },
+                    label = { Text(label) },
+                )
+            }
+        }
+
+        if (scanMode == ScanModeUi.RANGE) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = rangeStart,
+                    onValueChange = { vm.rangeStartMhz.value = it },
+                    label = { Text("Od (MHz)") },
+                    singleLine = true,
+                    enabled = !running,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = rangeEnd,
+                    onValueChange = { vm.rangeEndMhz.value = it },
+                    label = { Text("Do (MHz)") },
+                    singleLine = true,
+                    enabled = !running,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        if (scanMode == ScanModeUi.FAVORITES) {
+            Text(
+                "Skan pamięciowy: nasłuch tylko na zapisanych zakładkach (z trybem z zakładki). " +
+                    "Profile przełączane automatycznie wg zakładek.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray,
+            )
+        }
+        startError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
 
         Text(
             text = status.message.ifEmpty { "Gotowy" },

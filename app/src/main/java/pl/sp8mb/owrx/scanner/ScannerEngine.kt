@@ -10,9 +10,23 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+sealed class ScanMode {
+    /** scan everything visible in the current profile band */
+    data object FullBand : ScanMode()
+
+    /** scan only inside [startHz, endHz] (intersected with the visible band) */
+    data class Range(val startHz: Long, val endHz: Long) : ScanMode()
+
+    /** memory scan: watch only the given frequencies (favorites) */
+    data class Favorites(val targets: List<Target>) : ScanMode() {
+        data class Target(val freqHz: Long, val name: String, val modulation: String?, val profileId: String?)
+    }
+}
+
 data class ScannerConfig(
     val thresholdDb: Float = 12f,
     val rasterHz: Int = 12500,
+    val mode: ScanMode = ScanMode.FullBand,
     /** carrier must persist this long before we call it a hit */
     val confirmMs: Long = 400,
     /** keep listening this long after the carrier drops */
@@ -141,13 +155,12 @@ class ScannerEngine(
             ScanState.SCANNING -> {
                 val peak = findCandidate(frame, center, samp, now)
                 if (peak != null) {
-                    val (freq, db, floor) = peak
-                    if (candidateFreq != freq) {
-                        candidateFreq = freq
+                    if (candidateFreq != peak.freq) {
+                        candidateFreq = peak.freq
                         candidateSince = now
                     }
                     if (now - candidateSince >= config.confirmMs) {
-                        lock(freq, db, floor, center, samp, now)
+                        lock(peak, center, samp, now)
                     }
                 } else {
                     candidateFreq = 0
@@ -178,35 +191,70 @@ class ScannerEngine(
         }
     }
 
-    private fun findCandidate(frame: FloatArray, center: Long, samp: Int, now: Long): Triple<Long, Float, Float>? {
+    data class Candidate(val freq: Long, val peakDb: Float, val floorDb: Float, val modulation: String? = null, val name: String? = null)
+
+    private fun findCandidate(frame: FloatArray, center: Long, samp: Int, now: Long): Candidate? {
+        val mode = config.mode
+        if (mode is ScanMode.Favorites) return findFavoriteCandidate(mode, frame, center, samp, now)
+
         val peaks = CarrierDetector.detect(frame, config.thresholdDb)
-        var best: Triple<Long, Float, Float>? = null
+        var best: Candidate? = null
         for (p in peaks) {
             val freq = CarrierDetector.snapToRaster(
                 CarrierDetector.binToFreq(p.peakBin, frame.size, center, samp),
                 config.rasterHz,
             )
+            if (mode is ScanMode.Range && (freq < mode.startHz || freq > mode.endHz)) continue
             if (freq in blacklist) continue
             val lastVisit = recentVisits[freq]
             if (lastVisit != null && now - lastVisit < config.cooldownMs) continue
             // skip band edges (filter rolloff causes false peaks)
             val edge = (samp * EDGE_MARGIN).toLong()
             if (freq < center - samp / 2 + edge || freq > center + samp / 2 - edge) continue
-            if (best == null || p.peakDb > best.second) best = Triple(freq, p.peakDb, p.floorDb)
+            if (best == null || p.peakDb > best.peakDb) best = Candidate(freq, p.peakDb, p.floorDb)
         }
         return best
     }
 
-    private fun lock(freq: Long, peakDb: Float, floorDb: Float, center: Long, samp: Int, now: Long) {
-        lockedFreq = freq
+    /** Memory scan: check only the favorite frequencies that fall in the current band. */
+    private fun findFavoriteCandidate(
+        mode: ScanMode.Favorites,
+        frame: FloatArray,
+        center: Long,
+        samp: Int,
+        now: Long,
+    ): Candidate? {
+        val floor = CarrierDetector.noiseFloor(frame)
+        val halfWin = (frame.size * config.rasterHz.toFloat() / samp / 2).toInt().coerceAtLeast(2)
+        var best: Candidate? = null
+        for (t in mode.targets) {
+            if (t.freqHz in blacklist) continue
+            val lastVisit = recentVisits[t.freqHz]
+            if (lastVisit != null && now - lastVisit < config.cooldownMs) continue
+            val bin = CarrierDetector.freqToBin(t.freqHz, frame.size, center, samp) ?: continue
+            var maxDb = -Float.MAX_VALUE
+            for (i in (bin - halfWin).coerceAtLeast(0)..(bin + halfWin).coerceAtMost(frame.size - 1)) {
+                if (frame[i] > maxDb) maxDb = frame[i]
+            }
+            if (maxDb > floor + config.thresholdDb) {
+                if (best == null || maxDb > best.peakDb) {
+                    best = Candidate(t.freqHz, maxDb, floor, t.modulation, t.name)
+                }
+            }
+        }
+        return best
+    }
+
+    private fun lock(c: Candidate, center: Long, samp: Int, now: Long) {
+        lockedFreq = c.freq
         lockedSince = now
         lastSeenLocked = now
         state = ScanState.LOCKED
-        val offset = (freq - center).toInt().coerceIn(-samp / 2, samp / 2)
+        val offset = (c.freq - center).toInt().coerceIn(-samp / 2, samp / 2)
         // open squelch just above the noise floor so audio passes
-        host.tune(offset, squelchLevel = floorDb + 5f)
-        _hits.tryEmit(ScanHit(freq, peakDb, host.radioConfig.value.profileId))
-        publish("Nasłuch %.4f MHz (%.0f dB)".format(freq / 1e6, peakDb))
+        host.tune(offset, squelchLevel = c.floorDb + 5f, mod = c.modulation)
+        _hits.tryEmit(ScanHit(c.freq, c.peakDb, host.radioConfig.value.profileId))
+        publish("Nasłuch ${c.name ?: ""} %.4f MHz (%.0f dB)".format(c.freq / 1e6, c.peakDb).trim())
     }
 
     private fun carrierPresent(frame: FloatArray, center: Long, samp: Int): Boolean {

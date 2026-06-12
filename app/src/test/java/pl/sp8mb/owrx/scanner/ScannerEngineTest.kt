@@ -27,14 +27,14 @@ class ScannerEngineTest {
             )
         )
         val backoffFlow = MutableStateFlow<String?>(null)
-        val tuneCalls = ArrayList<Pair<Int, Float?>>()
+        val tuneCalls = ArrayList<Triple<Int, Float?, String?>>()
         val profileCalls = ArrayList<String>()
 
         override val fft get() = fftFlow
         override val radioConfig: StateFlow<RadioConfig> get() = configFlow
         override val backoff: StateFlow<String?> get() = backoffFlow
-        override fun tune(offsetFreq: Int, squelchLevel: Float?) {
-            tuneCalls.add(offsetFreq to squelchLevel)
+        override fun tune(offsetFreq: Int, squelchLevel: Float?, mod: String?) {
+            tuneCalls.add(Triple(offsetFreq, squelchLevel, mod))
         }
 
         override fun selectProfile(id: String) {
@@ -67,7 +67,7 @@ class ScannerEngineTest {
         host.fftFlow.emit(frame(2048))
         assertEquals(ScanState.LOCKED, engine.status.value.state)
         assertEquals(1, host.tuneCalls.size)
-        val (offset, squelch) = host.tuneCalls[0]
+        val (offset, squelch, _) = host.tuneCalls[0]
         assertEquals(0, offset) // 136.000 MHz == center
         assertTrue("squelch $squelch", squelch != null && squelch > -100f && squelch < -60f)
 
@@ -145,6 +145,55 @@ class ScannerEngineTest {
         host.fftFlow.emit(frame(null))
         assertEquals(listOf("a|1", "b|2"), host.profileCalls)
         assertEquals(ScanState.SETTLING, engine.status.value.state)
+    }
+
+    @Test
+    fun `range mode ignores peaks outside the range`() = runTest(UnconfinedTestDispatcher()) {
+        val host = FakeHost()
+        val engine = ScannerEngine(host, backgroundScope)
+        // visible band is 134.8–137.2; restrict scan to 136.5–137.0
+        engine.start(ScannerConfig(confirmMs = 0, mode = ScanMode.Range(136_500_000, 137_000_000)))
+
+        // carrier at ~136.000 → outside range, ignored
+        host.fftFlow.emit(frame(2048))
+        host.time = 1000
+        host.fftFlow.emit(frame(2048))
+        assertEquals(ScanState.SCANNING, engine.status.value.state)
+
+        // carrier at bin 3242 ≈ 136.7 MHz → inside range
+        host.time = 2000
+        host.fftFlow.emit(frame(3242))
+        host.time = 2100
+        host.fftFlow.emit(frame(3242))
+        assertEquals(ScanState.LOCKED, engine.status.value.state)
+    }
+
+    @Test
+    fun `favorites mode watches only targets and applies their mode`() = runTest(UnconfinedTestDispatcher()) {
+        val host = FakeHost()
+        val engine = ScannerEngine(host, backgroundScope)
+        engine.start(
+            ScannerConfig(
+                confirmMs = 0,
+                mode = ScanMode.Favorites(
+                    listOf(ScanMode.Favorites.Target(136_000_000, "TWR", "am", "rtlsdr|air")),
+                ),
+            )
+        )
+
+        // strong carrier far from any target → no lock
+        host.fftFlow.emit(frame(3000))
+        host.time = 500
+        host.fftFlow.emit(frame(3000))
+        assertEquals(ScanState.SCANNING, engine.status.value.state)
+
+        // carrier at the target → lock with the target's mode
+        host.time = 1000
+        host.fftFlow.emit(frame(2048))
+        host.time = 1100
+        host.fftFlow.emit(frame(2048))
+        assertEquals(ScanState.LOCKED, engine.status.value.state)
+        assertEquals("am", host.tuneCalls.last().third)
     }
 
     @Test

@@ -23,6 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -67,6 +69,7 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
 
     var leftOpen by remember { mutableStateOf(false) }
     var rightOpen by remember { mutableStateOf(false) }
+    var showAddFavorite by remember { mutableStateOf(false) }
     var waterfall by remember { mutableStateOf<WaterfallView?>(null) }
 
     LaunchedEffect(waterfall) {
@@ -267,6 +270,17 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
             icon = { Icon(Icons.Default.ChevronLeft, contentDescription = "Ulubione") },
             onClick = { rightOpen = true },
         )
+        if (showAddFavorite) {
+            AddFavoriteDialog(
+                freqLabel = "%.4f MHz %s".format(tunedFreq / 1e6, currentMod.uppercase()),
+                onDismiss = { showAddFavorite = false },
+                onSave = { name ->
+                    vm.addFavorite(name)
+                    showAddFavorite = false
+                },
+            )
+        }
+
         AnimatedVisibility(
             visible = rightOpen,
             enter = slideInHorizontally { it },
@@ -274,6 +288,20 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
             modifier = Modifier.align(Alignment.CenterEnd),
         ) {
             DrawerPanel(title = "Ulubione (${favorites.size})") {
+                // save the currently tuned frequency as a new favorite
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showAddFavorite = true }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFE0C040))
+                    Text(
+                        "  Dodaj bieżącą: %.4f MHz %s".format(tunedFreq / 1e6, currentMod.uppercase()),
+                        color = Color(0xFFE0C040),
+                    )
+                }
                 if (favorites.isEmpty()) {
                     Text(
                         "Brak — zakładki zbierają się automatycznie z odwiedzanych profili",
@@ -291,12 +319,38 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                                 fav.freqHz in (c - half)..(c + half)
                             } ?: false,
                             onClick = { vm.tuneToFavorite(fav) },
+                            onDelete = { vm.removeFavorite(fav) },
                         )
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun AddFavoriteDialog(
+    freqLabel: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nowa zakładka — $freqLabel") },
+        text = {
+            androidx.compose.material3.OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Nazwa (puste = częstotliwość)") },
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(name) }) { Text("Zapisz") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Anuluj") } },
+    )
 }
 
 @Composable
@@ -345,12 +399,12 @@ private fun DrawerPanel(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun FavoriteRow(fav: Favorite, inBand: Boolean, onClick: () -> Unit) {
+private fun FavoriteRow(fav: Favorite, inBand: Boolean, onClick: () -> Unit, onDelete: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -367,6 +421,13 @@ private fun FavoriteRow(fav: Favorite, inBand: Boolean, onClick: () -> Unit) {
                 "↷ profil",
                 style = MaterialTheme.typography.labelSmall,
                 color = Color(0xFFE0C040),
+            )
+        }
+        androidx.compose.material3.IconButton(onClick = onDelete) {
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "Usuń",
+                tint = Color.Gray,
             )
         }
     }

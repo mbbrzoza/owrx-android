@@ -96,6 +96,30 @@ class ReceiverViewModel @Inject constructor(
         }
     }
 
+    /** Save the currently tuned frequency as a favorite. */
+    fun addFavorite(name: String) {
+        val freq = tunedFreq.value
+        if (freq <= 0) return
+        val fav = pl.sp8mb.owrx.data.prefs.Favorite(
+            name = name.ifBlank { "%.4f MHz".format(freq / 1e6) },
+            freqHz = freq,
+            modulation = currentMod.value,
+            profileId = session.radioConfig.value.fullProfileId,
+        )
+        viewModelScope.launch {
+            prefs.saveFavorites(
+                (favorites.value.filterNot { it.freqHz == fav.freqHz && it.name == fav.name } + fav)
+                    .sortedBy { it.freqHz }
+            )
+        }
+    }
+
+    fun removeFavorite(fav: pl.sp8mb.owrx.data.prefs.Favorite) {
+        viewModelScope.launch {
+            prefs.saveFavorites(favorites.value - fav)
+        }
+    }
+
     /** Tune to a favorite — switching profile first when it lives in another band. */
     fun tuneToFavorite(fav: pl.sp8mb.owrx.data.prefs.Favorite) {
         val cfg = session.radioConfig.value
