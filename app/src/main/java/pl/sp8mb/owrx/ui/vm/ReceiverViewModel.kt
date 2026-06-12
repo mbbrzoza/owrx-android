@@ -56,10 +56,57 @@ class ReceiverViewModel @Inject constructor(
             parseBookmarks(bm) + parseBookmarks(dial)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    val favorites: StateFlow<List<pl.sp8mb.owrx.data.prefs.Favorite>> = prefs.favorites
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Favorite waiting for a profile switch before tuning. */
+    private var pendingFavorite: pl.sp8mb.owrx.data.prefs.Favorite? = null
+
     init {
         // persist user tuning (debounced) so a restart resumes where we were
         viewModelScope.launch {
             session.desired.drop(1).debounce(2000).collect { prefs.saveDesiredState(it) }
+        }
+        // learn favorites: server sends bookmarks for the current band only,
+        // so accumulate them per profile as the user visits bands
+        viewModelScope.launch {
+            combine(bookmarks, session.radioConfig) { bm, cfg -> bm to cfg.fullProfileId }
+                .debounce(1000)
+                .collect { (bm, profileId) ->
+                    if (profileId == null || bm.isEmpty()) return@collect
+                    val current = favorites.value
+                    val merged = (current + bm.map {
+                        pl.sp8mb.owrx.data.prefs.Favorite(it.name, it.frequency, it.modulation, profileId)
+                    }).distinctBy { it.freqHz to it.name }
+                    if (merged.size != current.size) prefs.saveFavorites(merged)
+                }
+        }
+        // complete a cross-band favorite jump once the new profile's config arrives
+        viewModelScope.launch {
+            session.radioConfig.collect { cfg ->
+                val fav = pendingFavorite ?: return@collect
+                val center = cfg.centerFreq ?: return@collect
+                val half = (cfg.sampRate ?: return@collect) / 2
+                if (fav.freqHz in (center - half)..(center + half)) {
+                    pendingFavorite = null
+                    tune(fav.freqHz)
+                    fav.modulation?.let { setMode(it) }
+                }
+            }
+        }
+    }
+
+    /** Tune to a favorite — switching profile first when it lives in another band. */
+    fun tuneToFavorite(fav: pl.sp8mb.owrx.data.prefs.Favorite) {
+        val cfg = session.radioConfig.value
+        val center = cfg.centerFreq
+        val half = (cfg.sampRate ?: 0) / 2
+        if (center != null && fav.freqHz in (center - half)..(center + half)) {
+            tune(fav.freqHz)
+            fav.modulation?.let { setMode(it) }
+        } else if (fav.profileId != null) {
+            pendingFavorite = fav
+            session.selectProfile(fav.profileId)
         }
     }
 

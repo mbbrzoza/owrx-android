@@ -90,6 +90,10 @@ class OwrxSession @Inject constructor(
     private val _modes = MutableStateFlow<List<ModeInfo>>(emptyList())
     val modes: StateFlow<List<ModeInfo>> = _modes.asStateFlow()
 
+    /** Learned profile bands: fullProfileId → (centerFreq, sampRate). */
+    private val _profileRanges = MutableStateFlow<Map<String, Pair<Long, Int>>>(emptyMap())
+    val profileRanges: StateFlow<Map<String, Pair<Long, Int>>> = _profileRanges.asStateFlow()
+
     private val _bookmarks = MutableStateFlow<kotlinx.serialization.json.JsonElement?>(null)
     val bookmarks: StateFlow<kotlinx.serialization.json.JsonElement?> = _bookmarks.asStateFlow()
 
@@ -254,6 +258,10 @@ class OwrxSession @Inject constructor(
                 fftDecoder.compression = merged.fftCompression
                 audioDecoder.compression = merged.audioCompression
                 hdAudioDecoder.compression = merged.audioCompression
+                val pid = merged.fullProfileId
+                if (pid != null && merged.centerFreq != null && merged.sampRate != null) {
+                    _profileRanges.value = _profileRanges.value + (pid to (merged.centerFreq to merged.sampRate))
+                }
                 if (pendingReplay) {
                     pendingReplay = false
                     replayDesiredState()

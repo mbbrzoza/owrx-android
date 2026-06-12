@@ -25,6 +25,7 @@ class UserPreferences @Inject constructor(
     private object Keys {
         val LAST_SERVER = longPreferencesKey("last_server_id")
         val DESIRED = stringPreferencesKey("desired_state")
+        val FAVORITES = stringPreferencesKey("favorites")
     }
 
     val lastServerId: Flow<Long?> = context.dataStore.data.map { it[Keys.LAST_SERVER] }
@@ -46,4 +47,30 @@ class UserPreferences @Inject constructor(
     suspend fun saveDesiredState(state: DesiredState) {
         context.dataStore.edit { it[Keys.DESIRED] = json.encodeToString(state) }
     }
+
+    val favorites: Flow<List<Favorite>> = context.dataStore.data.map { prefs ->
+        prefs[Keys.FAVORITES]?.let {
+            try {
+                json.decodeFromString<List<Favorite>>(it)
+            } catch (e: Exception) {
+                null
+            }
+        } ?: emptyList()
+    }
+
+    suspend fun saveFavorites(favorites: List<Favorite>) {
+        context.dataStore.edit { it[Keys.FAVORITES] = json.encodeToString(favorites) }
+    }
 }
+
+/**
+ * A bookmark remembered across profiles — carries the profile it belongs to,
+ * so tapping it can switch the receiver to that band first.
+ */
+@kotlinx.serialization.Serializable
+data class Favorite(
+    val name: String,
+    val freqHz: Long,
+    val modulation: String? = null,
+    val profileId: String? = null,
+)
