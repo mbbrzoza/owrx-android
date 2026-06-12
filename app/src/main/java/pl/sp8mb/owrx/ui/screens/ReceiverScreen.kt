@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -74,6 +75,7 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
     var leftOpen by remember { mutableStateOf(false) }
     var rightOpen by remember { mutableStateOf(false) }
     var showAddFavorite by remember { mutableStateOf(false) }
+    var showFreqDialog by remember { mutableStateOf(false) }
     var waterfall by remember { mutableStateOf<WaterfallView?>(null) }
 
     LaunchedEffect(waterfall) {
@@ -108,10 +110,13 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
+                    // digital frequency display — tap to type any frequency
                     Text(
                         text = if (tunedFreq > 0) "%.4f MHz".format(tunedFreq / 1e6) else "—",
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.headlineMedium,
                         fontFamily = FontFamily.Monospace,
+                        color = Color(0xFF9CE0FF),
+                        modifier = Modifier.clickable { showFreqDialog = true },
                     )
                     Text(
                         text = when (val s = state) {
@@ -204,13 +209,23 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                 }
             }
 
-            // ── squelch ──
+            // ── single toolbar: mute | SQ | AGC/gain | NR | REC | colours ──
+            val muted by vm.muted.collectAsState()
+            val gain by vm.gainState.collectAsState()
+            val recState by vm.recorderState.collectAsState()
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                androidx.compose.material3.IconButton(onClick = vm::toggleMute) {
+                    Icon(
+                        if (muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = "Wycisz",
+                        tint = if (muted) Color(0xFFFF6060) else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
                 Text("SQ", style = MaterialTheme.typography.bodySmall)
                 Slider(
                     value = desired.squelchLevel ?: -150f,
@@ -223,66 +238,52 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                 )
-                TextButton(onClick = vm::autoSquelch) { Text("Auto") }
+                TextButton(onClick = vm::autoSquelch, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp)) { Text("Auto") }
 
-                // device gain (auto/manual) — needs OWRX admin credentials
-                val gain by vm.gainState.collectAsState()
                 gain?.let { g ->
                     FilterChip(
                         selected = g.auto,
                         onClick = { vm.setGainAuto(!g.auto) },
                         label = { Text("AGC") },
                     )
-                    TextButton(onClick = { vm.adjustGain(-1f) }, enabled = !g.auto) { Text("−") }
+                    TextButton(
+                        onClick = { vm.adjustGain(-1f) },
+                        enabled = !g.auto,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp),
+                    ) { Text("−") }
                     Text(
                         if (g.auto) "auto" else "%.0f".format(g.manual),
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
                         color = if (g.auto) Color.Gray else MaterialTheme.colorScheme.onSurface,
                     )
-                    TextButton(onClick = { vm.adjustGain(+1f) }, enabled = !g.auto) { Text("+") }
+                    TextButton(
+                        onClick = { vm.adjustGain(+1f) },
+                        enabled = !g.auto,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp),
+                    ) { Text("+") }
                 }
-            }
 
-            // ── audio / display tools: mute, NR, waterfall colours ──
-            val muted by vm.muted.collectAsState()
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                androidx.compose.material3.IconButton(onClick = vm::toggleMute) {
-                    Icon(
-                        if (muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                        contentDescription = "Wycisz",
-                        tint = if (muted) Color(0xFFFF6060) else MaterialTheme.colorScheme.onSurface,
-                    )
-                }
                 FilterChip(
                     selected = desired.nrEnabled == true,
                     onClick = { vm.setNr(desired.nrEnabled != true, desired.nrThreshold ?: 4) },
                     label = { Text("NR") },
                 )
                 if (desired.nrEnabled == true) {
-                    Slider(
-                        value = (desired.nrThreshold ?: 4).toFloat(),
-                        onValueChange = { vm.setNr(true, it.toInt()) },
-                        valueRange = 0f..30f,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        "${desired.nrThreshold ?: 4}",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                } else {
-                    Spacer(modifier = Modifier.weight(1f))
+                    // tap cycles the NR threshold
+                    TextButton(
+                        onClick = {
+                            val next = when (desired.nrThreshold ?: 4) {
+                                2 -> 4; 4 -> 8; 8 -> 16; 16 -> 24; else -> 2
+                            }
+                            vm.setNr(true, next)
+                        },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp),
+                    ) {
+                        Text("${desired.nrThreshold ?: 4}", fontFamily = FontFamily.Monospace)
+                    }
                 }
 
-                // audio recording to .m4a
-                val recState by vm.recorderState.collectAsState()
                 if (recState.recording) {
                     var elapsed by remember { mutableStateOf(0L) }
                     LaunchedEffect(recState.startedAt) {
@@ -292,7 +293,7 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                         }
                     }
                     Text(
-                        "REC %d:%02d".format(elapsed / 60, elapsed % 60),
+                        "%d:%02d".format(elapsed / 60, elapsed % 60),
                         color = Color(0xFFFF6060),
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
@@ -305,8 +306,22 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                         tint = if (recState.recording) Color(0xFFFF3030) else Color.Gray,
                     )
                 }
-                TextButton(onClick = { waterfall?.snapLevels() }) { Text("Kolory") }
+                androidx.compose.material3.IconButton(onClick = { waterfall?.snapLevels() }) {
+                    Icon(Icons.Default.Palette, contentDescription = "Kolory")
+                }
             }
+        }
+
+        if (showFreqDialog) {
+            FreqEntryDialog(
+                currentMhz = if (tunedFreq > 0) "%.4f".format(tunedFreq / 1e6).replace(',', '.') else "",
+                onDismiss = { showFreqDialog = false },
+                onTune = { mhz ->
+                    showFreqDialog = false
+                    val freq = (mhz * 1e6).toLong()
+                    vm.tuneAnywhere(freq)
+                },
+            )
         }
 
         // ── scrim when a drawer is open ──
@@ -418,6 +433,38 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
             }
         }
     }
+}
+
+@Composable
+private fun FreqEntryDialog(
+    currentMhz: String,
+    onDismiss: () -> Unit,
+    onTune: (Double) -> Unit,
+) {
+    var text by remember { mutableStateOf(currentMhz) }
+    val parsed = text.replace(',', '.').toDoubleOrNull()
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Częstotliwość (MHz)") },
+        text = {
+            androidx.compose.material3.OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("MHz") },
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                ),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { parsed?.let(onTune) },
+                enabled = parsed != null && parsed > 0,
+            ) { Text("Strój") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Anuluj") } },
+    )
 }
 
 @Composable

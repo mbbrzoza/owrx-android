@@ -110,7 +110,8 @@ class AdminClient(
         for (el in form.select("input, select, textarea")) {
             val name = el.attr("name")
             if (name.isEmpty()) continue
-            val label = form.selectFirst("label[for=${el.attr("id")}]")?.text()
+            val elId = el.attr("id")
+            val label = (if (elId.isNotEmpty()) form.selectFirst("label[for=$elId]")?.text() else null)
                 ?: el.closest(".form-group")?.selectFirst("label")?.text()
                 ?: name
             when (el.tagName()) {

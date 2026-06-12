@@ -71,9 +71,18 @@ class ReceiverViewModel @Inject constructor(
 
     private suspend fun ensureAdmin(): pl.sp8mb.owrx.admin.AdminClient? {
         adminClient?.let { return it }
-        val serverId = prefs.lastServerId.first() ?: return null
-        val server = serverDao.byId(serverId) ?: return null
-        if (server.adminUser.isNullOrEmpty()) return null
+        val serverId = prefs.lastServerId.first() ?: run {
+            android.util.Log.w(TAG, "gain: no last server id")
+            return null
+        }
+        val server = serverDao.byId(serverId) ?: run {
+            android.util.Log.w(TAG, "gain: server $serverId not in db")
+            return null
+        }
+        if (server.adminUser.isNullOrEmpty()) {
+            android.util.Log.w(TAG, "gain: no admin credentials for '${server.name}'")
+            return null
+        }
         return try {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 pl.sp8mb.owrx.admin.AdminClient(
@@ -83,8 +92,12 @@ class ReceiverViewModel @Inject constructor(
                     basicAuthUser = server.username,
                     basicAuthPassword = server.password,
                 ).also { it.login() }
-            }.also { adminClient = it }
+            }.also {
+                adminClient = it
+                android.util.Log.i(TAG, "gain: admin login OK on ${server.httpUrl()}")
+            }
         } catch (e: Exception) {
+            android.util.Log.w(TAG, "gain: admin login FAILED", e)
             null
         }
     }
@@ -101,6 +114,11 @@ class ReceiverViewModel @Inject constructor(
             val manual = form.fields.firstOrNull { it.name == "rf_gain-manual" }
             gainPath = path
             gainForm = form
+            android.util.Log.i(
+                TAG,
+                "gain: form $path fields=" + form.fields.joinToString { it.name } +
+                    " select=${select?.value} manual=${manual?.value}",
+            )
             gainState.value = if (select != null) {
                 GainState(
                     auto = select.value == "auto",
@@ -110,8 +128,13 @@ class ReceiverViewModel @Inject constructor(
                 null
             }
         } catch (e: Exception) {
+            android.util.Log.w(TAG, "gain: loadGain failed", e)
             gainState.value = null
         }
+    }
+
+    private companion object {
+        const val TAG = "ReceiverVM"
     }
 
     private fun submitGain(auto: Boolean, manual: Float) {
@@ -255,6 +278,27 @@ class ReceiverViewModel @Inject constructor(
         viewModelScope.launch {
             prefs.saveFavorites(favorites.value - fav)
         }
+    }
+
+    /**
+     * Tune to any frequency: inside the current band directly, otherwise jump
+     * to a learned profile whose band covers it (then tune after the config).
+     */
+    fun tuneAnywhere(freqHz: Long): Boolean {
+        val cfg = session.radioConfig.value
+        val center = cfg.centerFreq
+        val half = (cfg.sampRate ?: 0) / 2
+        if (center != null && freqHz in (center - half)..(center + half)) {
+            tune(freqHz)
+            return true
+        }
+        val profile = session.profileRanges.value.entries.firstOrNull { (_, range) ->
+            val (c, samp) = range
+            freqHz in (c - samp / 2)..(c + samp / 2)
+        }?.key ?: return false
+        pendingFavorite = pl.sp8mb.owrx.data.prefs.Favorite("", freqHz, null, profile)
+        session.selectProfile(profile)
+        return true
     }
 
     /** Tune to a favorite — switching profile first when it lives in another band. */
