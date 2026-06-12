@@ -7,6 +7,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -36,8 +37,33 @@ class ReceiverViewModel @Inject constructor(
     private val audioPipeline: pl.sp8mb.owrx.session.AudioPipeline,
     private val recorder: pl.sp8mb.owrx.session.AudioRecorder,
     private val serverDao: pl.sp8mb.owrx.data.db.ServerDao,
+    private val favoritesIO: pl.sp8mb.owrx.data.prefs.FavoritesIO,
     dvoice: pl.sp8mb.owrx.dvoice.DigitalVoiceRepository,
 ) : ViewModel() {
+
+    /** Transient toast text for favorite backup actions. */
+    val ioMessage = MutableStateFlow<String?>(null)
+
+    fun exportFavorites() {
+        viewModelScope.launch {
+            val path = favoritesIO.export(favorites.value)
+            ioMessage.value = if (path != null) "Zapisano: $path" else "Błąd eksportu"
+        }
+    }
+
+    fun importFavorites() {
+        viewModelScope.launch {
+            val imported = favoritesIO.import()
+            if (imported == null) {
+                ioMessage.value = "Brak/niepoprawny plik owrx_favorites.json"
+                return@launch
+            }
+            // merge with existing, de-dup by freq+name
+            val merged = (favorites.value + imported).distinctBy { it.freqHz to it.name }
+            prefs.saveFavorites(merged.sortedBy { it.freqHz })
+            ioMessage.value = "Zaimportowano ${imported.size} (razem ${merged.size})"
+        }
+    }
 
     val digitalVoice = dvoice.active
     val clientCount = session.clientCount

@@ -387,6 +387,25 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
             }
         }
 
+        val ioMsg: String? by vm.ioMessage.collectAsState()
+        ioMsg?.let { msg ->
+            LaunchedEffect(msg) {
+                kotlinx.coroutines.delay(3000)
+                vm.ioMessage.value = null
+            }
+            Box(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),
+            ) {
+                Surface(color = Color(0xE0303840), shape = RoundedCornerShape(8.dp)) {
+                    Text(
+                        msg,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
+
         if (showChat) {
             val chat by vm.chat.collectAsState()
             ChatDialog(
@@ -484,6 +503,14 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
             modifier = Modifier.align(Alignment.CenterEnd),
         ) {
             DrawerPanel(title = "Ulubione (${favorites.size})") {
+                // export/import backup
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TextButton(onClick = vm::exportFavorites) { Text("Eksport") }
+                    TextButton(onClick = vm::importFavorites) { Text("Import") }
+                }
                 // save the currently tuned frequency as a new favorite
                 Row(
                     modifier = Modifier
