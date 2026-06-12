@@ -156,6 +156,32 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                 )
             }
 
+            // ── "who's transmitting" for digital voice (DMR/YSF/D-STAR/NXDN) ──
+            val dv by vm.digitalVoice.collectAsState()
+            dv?.let { a ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0x2240C040))
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "🔊 ${a.protocol}" + (a.slot?.let { " S$it" } ?: ""),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF7CCB7C),
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Text(
+                        "  ${a.line1}" + (a.line2?.let { " $it" } ?: ""),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
             // ── frequency scale + waterfall ──
             AndroidView(
                 factory = { ctx ->

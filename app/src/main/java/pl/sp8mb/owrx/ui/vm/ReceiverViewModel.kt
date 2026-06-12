@@ -36,7 +36,10 @@ class ReceiverViewModel @Inject constructor(
     private val audioPipeline: pl.sp8mb.owrx.session.AudioPipeline,
     private val recorder: pl.sp8mb.owrx.session.AudioRecorder,
     private val serverDao: pl.sp8mb.owrx.data.db.ServerDao,
+    dvoice: pl.sp8mb.owrx.dvoice.DigitalVoiceRepository,
 ) : ViewModel() {
+
+    val digitalVoice = dvoice.active
 
     val muted = audioPipeline.userMuted
 
