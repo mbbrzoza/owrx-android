@@ -19,6 +19,7 @@ import javax.inject.Singleton
 @Singleton
 class AudioPipeline @Inject constructor(
     @ApplicationContext private val context: Context?,
+    private val recorder: AudioRecorder?,
 ) {
     private var focusRequest: AudioFocusRequest? = null
 
@@ -116,6 +117,7 @@ class AudioPipeline @Inject constructor(
                     trackRate = chunk.sampleRate
                     track.play()
                 }
+                recorder?.feed(chunk.pcm, chunk.sampleRate)
                 if (muted) continue
                 track.write(chunk.pcm, 0, chunk.pcm.size)
             }

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -223,6 +224,19 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                     fontFamily = FontFamily.Monospace,
                 )
                 TextButton(onClick = vm::autoSquelch) { Text("Auto") }
+
+                // RF gain of the current profile (needs OWRX admin credentials)
+                val gain by vm.gainText.collectAsState()
+                gain?.let { g ->
+                    Text("  RF", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { vm.adjustGain(-1f) }) { Text("−") }
+                    Text(
+                        g,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    TextButton(onClick = { vm.adjustGain(+1f) }) { Text("+") }
+                }
             }
 
             // ── audio / display tools: mute, NR, waterfall colours ──
@@ -260,6 +274,31 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                     )
                 } else {
                     Spacer(modifier = Modifier.weight(1f))
+                }
+
+                // audio recording to .m4a
+                val recState by vm.recorderState.collectAsState()
+                if (recState.recording) {
+                    var elapsed by remember { mutableStateOf(0L) }
+                    LaunchedEffect(recState.startedAt) {
+                        while (true) {
+                            elapsed = (System.currentTimeMillis() - recState.startedAt) / 1000
+                            kotlinx.coroutines.delay(1000)
+                        }
+                    }
+                    Text(
+                        "REC %d:%02d".format(elapsed / 60, elapsed % 60),
+                        color = Color(0xFFFF6060),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+                androidx.compose.material3.IconButton(onClick = vm::toggleRecording) {
+                    Icon(
+                        Icons.Default.FiberManualRecord,
+                        contentDescription = "Nagrywaj",
+                        tint = if (recState.recording) Color(0xFFFF3030) else Color.Gray,
+                    )
                 }
                 TextButton(onClick = { waterfall?.snapLevels() }) { Text("Kolory") }
             }

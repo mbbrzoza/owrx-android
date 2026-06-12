@@ -11,7 +11,7 @@ import pl.sp8mb.owrx.session.OwrxSession
 
 class TetraRepositoryTest {
 
-    private fun repo() = TetraRepository(OwrxSession(OkHttpClient(), AudioPipeline(null)))
+    private fun repo() = TetraRepository(OwrxSession(OkHttpClient(), AudioPipeline(null, null)))
 
     private fun TetraRepository.feed(json: String) =
         handle(Json.parseToJsonElement(json).jsonObject)

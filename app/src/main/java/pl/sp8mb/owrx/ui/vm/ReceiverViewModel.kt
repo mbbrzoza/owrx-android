@@ -8,7 +8,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
@@ -31,12 +34,102 @@ class ReceiverViewModel @Inject constructor(
     val session: OwrxSession,
     private val prefs: UserPreferences,
     private val audioPipeline: pl.sp8mb.owrx.session.AudioPipeline,
+    private val recorder: pl.sp8mb.owrx.session.AudioRecorder,
+    private val serverDao: pl.sp8mb.owrx.data.db.ServerDao,
 ) : ViewModel() {
 
     val muted = audioPipeline.userMuted
 
     fun toggleMute() {
         audioPipeline.userMuted.value = !audioPipeline.userMuted.value
+    }
+
+    // ── recording ──
+
+    val recorderState = recorder.state
+
+    fun toggleRecording() {
+        if (recorder.state.value.recording) {
+            recorder.stop()
+        } else {
+            val rate = pl.sp8mb.owrx.session.AudioPipeline.BASE_RATE
+            recorder.start(rate, "%.4fMHz".format(tunedFreq.value / 1e6).replace(',', '.'))
+        }
+    }
+
+    // ── RF gain via the admin panel (gain is a server-side profile property) ──
+
+    /** Current rf_gain as text, or null when admin access is unavailable. */
+    val gainText = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
+    private var adminClient: pl.sp8mb.owrx.admin.AdminClient? = null
+    private var gainForm: pl.sp8mb.owrx.admin.AdminClient.FormPage? = null
+    private var gainPath: String? = null
+    private var gainSubmitJob: kotlinx.coroutines.Job? = null
+
+    private suspend fun ensureAdmin(): pl.sp8mb.owrx.admin.AdminClient? {
+        adminClient?.let { return it }
+        val serverId = prefs.lastServerId.first() ?: return null
+        val server = serverDao.byId(serverId) ?: return null
+        if (server.adminUser.isNullOrEmpty()) return null
+        return try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                pl.sp8mb.owrx.admin.AdminClient(
+                    baseUrl = server.httpUrl(),
+                    username = server.adminUser,
+                    password = server.adminPassword ?: "",
+                    basicAuthUser = server.username,
+                    basicAuthPassword = server.password,
+                ).also { it.login() }
+            }.also { adminClient = it }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private suspend fun loadGain(sdrId: String, profileId: String) {
+        val client = ensureAdmin() ?: run { gainText.value = null; return }
+        try {
+            val path = "/settings/sdr/$sdrId/profile/$profileId"
+            val form = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                client.loadForm(path)
+            }
+            val gain = form.fields.firstOrNull { it.name.contains("rf_gain") }
+            gainPath = path
+            gainForm = form
+            gainText.value = gain?.value
+        } catch (e: Exception) {
+            gainText.value = null
+        }
+    }
+
+    /** Set rf_gain (number or "auto"); submission debounced to limit SDR restarts. */
+    fun setGain(value: String) {
+        val form = gainForm ?: return
+        gainText.value = value
+        gainForm = form.copy(
+            fields = form.fields.map {
+                if (it.name.contains("rf_gain")) it.copy(value = value) else it
+            }
+        )
+        gainSubmitJob?.cancel()
+        gainSubmitJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(700)
+            val client = adminClient ?: return@launch
+            val f = gainForm ?: return@launch
+            try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    client.submitForm(f.action, f.fields)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("ReceiverVM", "gain submit", e)
+            }
+        }
+    }
+
+    fun adjustGain(delta: Float) {
+        val current = gainText.value?.toFloatOrNull() ?: 20f
+        setGain("%.1f".format(current + delta).replace(',', '.').removeSuffix(".0"))
     }
 
     /** Web-style auto squelch: current S-meter + configured margin. */
@@ -94,6 +187,16 @@ class ReceiverViewModel @Inject constructor(
                         pl.sp8mb.owrx.data.prefs.Favorite(it.name, it.frequency, it.modulation, profileId)
                     }).distinctBy { it.freqHz to it.name }
                     if (merged.size != current.size) prefs.saveFavorites(merged)
+                }
+        }
+        // refresh RF gain whenever the active profile changes (admin access required)
+        viewModelScope.launch {
+            session.radioConfig
+                .map { it.sdrId to it.profileId }
+                .distinctUntilChanged()
+                .collect { (sdr, profile) ->
+                    gainForm = null
+                    if (sdr != null && profile != null) loadGain(sdr, profile) else gainText.value = null
                 }
         }
         // complete a cross-band favorite jump once the new profile's config arrives
