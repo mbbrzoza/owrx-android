@@ -1,22 +1,60 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- T letter for TetraLink -->
+
+    <!-- Waterfall bands: dark edges, hot centre (a signal in the waterfall) -->
+    <path android:pathData="M24,52 h60 v6 h-60 z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="24" android:startY="0" android:endX="84" android:endY="0">
+                <item android:offset="0.0" android:color="#FF11202F" />
+                <item android:offset="0.5" android:color="#FF24C8E8" />
+                <item android:offset="1.0" android:color="#FF11202F" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M24,60 h60 v6 h-60 z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="24" android:startY="0" android:endX="84" android:endY="0">
+                <item android:offset="0.0" android:color="#FF11202F" />
+                <item android:offset="0.5" android:color="#FF34D46A" />
+                <item android:offset="1.0" android:color="#FF11202F" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M24,68 h60 v6 h-60 z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="24" android:startY="0" android:endX="84" android:endY="0">
+                <item android:offset="0.0" android:color="#FF11202F" />
+                <item android:offset="0.5" android:color="#FFE8D63C" />
+                <item android:offset="1.0" android:color="#FF11202F" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M24,76 h60 v6 h-60 z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="24" android:startY="0" android:endX="84" android:endY="0">
+                <item android:offset="0.0" android:color="#FF11202F" />
+                <item android:offset="0.5" android:color="#FFE87C30" />
+                <item android:offset="1.0" android:color="#FF11202F" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Tuned carrier line through the waterfall -->
     <path
-        android:fillColor="#FF3B82F6"
-        android:pathData="M34,30h40v8H58v40h-8V38H34z" />
-    <!-- Signal waves -->
+        android:fillColor="#CCCDEFFF"
+        android:pathData="M52.5,28 h3 v54 h-3 z" />
+
+    <!-- Spectrum trace with a central peak -->
     <path
-        android:fillColor="#FF3B82F6"
-        android:pathData="M68,45 C72,42 72,55 68,52"
-        android:strokeWidth="2"
-        android:strokeColor="#FF3B82F6" />
-    <path
-        android:fillColor="#FF3B82F6"
-        android:pathData="M74,40 C80,36 80,60 74,56"
-        android:strokeWidth="2"
-        android:strokeColor="#FF3B82F6" />
+        android:strokeColor="#FFEAF6FF"
+        android:strokeWidth="2.6"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M24,46 L31,45 L37,46 L43,43 L49,41 L52,41 L54,28 L56,41 L59,41 L65,43 L71,46 L77,45 L84,46" />
 </vector>
