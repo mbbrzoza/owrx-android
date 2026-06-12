@@ -23,8 +23,16 @@ class ScannerViewModel @Inject constructor(
     private val engine: ScannerEngine,
     private val scanHitDao: ScanHitDao,
     private val session: OwrxSession,
+    private val alerter: pl.sp8mb.owrx.scanner.ScanAlerter,
     prefs: pl.sp8mb.owrx.data.prefs.UserPreferences,
 ) : ViewModel() {
+
+    val alertEnabled = MutableStateFlow(true)
+
+    fun toggleAlert() {
+        alertEnabled.value = !alertEnabled.value
+        alerter.enabled = alertEnabled.value
+    }
 
     val status = engine.status
     val profiles = session.profiles
@@ -89,6 +97,20 @@ class ScannerViewModel @Inject constructor(
             // keep the engine's blacklist in sync with the DB
             hits.collect {
                 engine.blacklist = it.filter { h -> h.blacklisted }.map { h -> h.freqHz }.toSet()
+            }
+        }
+        // beep + vibrate on a genuinely new lock (not on HANG->LOCKED re-opens
+        // within the same transmission)
+        viewModelScope.launch {
+            var prev = pl.sp8mb.owrx.scanner.ScanState.IDLE
+            engine.status.collect { st ->
+                if (st.state == pl.sp8mb.owrx.scanner.ScanState.LOCKED &&
+                    prev != pl.sp8mb.owrx.scanner.ScanState.LOCKED &&
+                    prev != pl.sp8mb.owrx.scanner.ScanState.HANG
+                ) {
+                    alerter.lockAlert()
+                }
+                prev = st.state
             }
         }
     }

@@ -68,6 +68,12 @@ fun ScannerScreen(vm: ScannerViewModel = hiltViewModel()) {
                 Icon(Icons.Default.SkipNext, null)
                 Text(" Pomiń")
             }
+            val alertOn by vm.alertEnabled.collectAsState()
+            FilterChip(
+                selected = alertOn,
+                onClick = vm::toggleAlert,
+                label = { Text(if (alertOn) "🔔" else "🔕") },
+            )
         }
 
         // ── scan mode ──
