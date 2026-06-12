@@ -24,7 +24,8 @@ sealed class ScanMode {
 }
 
 data class ScannerConfig(
-    val thresholdDb: Float = 12f,
+    /** dB above the noise floor; null = automatic per-frame threshold */
+    val thresholdDb: Float? = null,
     val rasterHz: Int = 12500,
     val mode: ScanMode = ScanMode.FullBand,
     /** carrier must persist this long before we call it a hit */
@@ -193,11 +194,19 @@ class ScannerEngine(
 
     data class Candidate(val freq: Long, val peakDb: Float, val floorDb: Float, val modulation: String? = null, val name: String? = null)
 
+    /** Last threshold used (for UI display in auto mode). */
+    @Volatile
+    var currentThresholdDb: Float = 12f
+        private set
+
+    private fun effectiveThreshold(frame: FloatArray): Float =
+        (config.thresholdDb ?: CarrierDetector.autoThreshold(frame)).also { currentThresholdDb = it }
+
     private fun findCandidate(frame: FloatArray, center: Long, samp: Int, now: Long): Candidate? {
         val mode = config.mode
         if (mode is ScanMode.Favorites) return findFavoriteCandidate(mode, frame, center, samp, now)
 
-        val peaks = CarrierDetector.detect(frame, config.thresholdDb)
+        val peaks = CarrierDetector.detect(frame, effectiveThreshold(frame))
         var best: Candidate? = null
         for (p in peaks) {
             val freq = CarrierDetector.snapToRaster(
@@ -236,7 +245,7 @@ class ScannerEngine(
             for (i in (bin - halfWin).coerceAtLeast(0)..(bin + halfWin).coerceAtMost(frame.size - 1)) {
                 if (frame[i] > maxDb) maxDb = frame[i]
             }
-            if (maxDb > floor + config.thresholdDb) {
+            if (maxDb > floor + effectiveThreshold(frame)) {
                 if (best == null || maxDb > best.peakDb) {
                     best = Candidate(t.freqHz, maxDb, floor, t.modulation, t.name)
                 }
@@ -266,7 +275,7 @@ class ScannerEngine(
         for (i in (bin - halfWin).coerceAtLeast(0)..(bin + halfWin).coerceAtMost(frame.size - 1)) {
             if (frame[i] > maxDb) maxDb = frame[i]
         }
-        return maxDb > floor + config.thresholdDb - HYSTERESIS_DB
+        return maxDb > floor + effectiveThreshold(frame) - HYSTERESIS_DB
     }
 
     private fun maybeHopProfile(now: Long) {

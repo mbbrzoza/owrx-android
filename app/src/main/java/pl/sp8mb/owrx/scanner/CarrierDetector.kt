@@ -21,6 +21,20 @@ object CarrierDetector {
         return copy[copy.size / 2]
     }
 
+    /**
+     * Automatic squelch threshold (dB above the floor): noise spread
+     * (80th percentile − median) plus a fixed margin, clamped to 6–20 dB.
+     * Quiet band → ~8 dB; busy/noisy band → higher, avoiding weak junk.
+     */
+    fun autoThreshold(frame: FloatArray): Float {
+        if (frame.isEmpty()) return 12f
+        val copy = frame.copyOf()
+        copy.sort()
+        val median = copy[copy.size / 2]
+        val p80 = copy[(copy.size * 80) / 100]
+        return ((p80 - median) + 8f).coerceIn(6f, 20f)
+    }
+
     fun detect(frame: FloatArray, thresholdDb: Float, minBins: Int = 2): List<Peak> {
         if (frame.isEmpty()) return emptyList()
         val floor = noiseFloor(frame)

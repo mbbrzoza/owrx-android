@@ -162,16 +162,27 @@ fun ScannerScreen(vm: ScannerViewModel = hiltViewModel()) {
         )
 
         // ── parameters ──
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Próg ", style = MaterialTheme.typography.bodySmall)
+        val thresholdAuto by vm.thresholdAuto.collectAsState()
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("SQ", style = MaterialTheme.typography.bodySmall)
+            FilterChip(
+                selected = thresholdAuto,
+                onClick = { if (!running) vm.thresholdAuto.value = !thresholdAuto },
+                label = { Text("Auto") },
+            )
             Slider(
                 value = threshold,
                 onValueChange = { vm.thresholdDb.value = it },
                 valueRange = 6f..30f,
-                enabled = !running,
+                enabled = !running && !thresholdAuto,
                 modifier = Modifier.weight(1f),
             )
-            Text("%.0f dB".format(threshold), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+            Text(
+                if (thresholdAuto) "auto" else "%.0f dB".format(threshold),
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = if (thresholdAuto) Color.Gray else MaterialTheme.colorScheme.onSurface,
+            )
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

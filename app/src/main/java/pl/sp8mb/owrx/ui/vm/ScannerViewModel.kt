@@ -41,6 +41,7 @@ class ScannerViewModel @Inject constructor(
     val rangeStartMhz = MutableStateFlow("")
     val rangeEndMhz = MutableStateFlow("")
     val thresholdDb = MutableStateFlow(12f)
+    val thresholdAuto = MutableStateFlow(true)
     val rasterHz = MutableStateFlow(12500)
     val selectedProfiles = MutableStateFlow<List<String>>(emptyList())
 
@@ -130,7 +131,7 @@ class ScannerViewModel @Inject constructor(
         }
         engine.start(
             ScannerConfig(
-                thresholdDb = thresholdDb.value,
+                thresholdDb = if (thresholdAuto.value) null else thresholdDb.value,
                 rasterHz = rasterHz.value,
                 mode = mode,
                 profilePlan = plan,
