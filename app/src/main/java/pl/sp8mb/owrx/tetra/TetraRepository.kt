@@ -57,6 +57,12 @@ class TetraRepository @Inject constructor(
     private val _afc = MutableStateFlow<Float?>(null)
     val afc: StateFlow<Float?> = _afc.asStateFlow()
 
+    private val _dmoLog = MutableStateFlow<List<LogEntry>>(emptyList())
+    val dmoLog: StateFlow<List<LogEntry>> = _dmoLog.asStateFlow()
+
+    private val _dmoStats = MutableStateFlow<String?>(null)
+    val dmoStats: StateFlow<String?> = _dmoStats.asStateFlow()
+
     private val _burstRate = MutableStateFlow<Float?>(null)
     val burstRate: StateFlow<Float?> = _burstRate.asStateFlow()
 
@@ -105,7 +111,35 @@ class TetraRepository @Inject constructor(
                 if (obj.str("action")?.contains("fail") == true) LogColor.RED else LogColor.GRAY,
             )
             "session_reset" -> onSessionReset(obj)
+            "dmo_burst" -> onDmoBurst(obj)
+            "dmo_stats" -> onDmoStats(obj)
+            "dmo_call_ctx" -> push(
+                _dmoLog,
+                LogEntry(now(), "Ctx: src=${obj.long("src")} MNI=${obj.long("mni")} ${obj.str("msg") ?: ""}", LogColor.BLUE),
+                ACTIVITY_CAP,
+            )
         }
+    }
+
+    private fun onDmoBurst(obj: JsonObject) {
+        val txt = buildString {
+            append(obj.str("sync_type") ?: "DMO")
+            obj.int("tn")?.let { append(" TS$it") }
+            obj.str("comm")?.let { append(" $it") }
+            obj.str("msg_type")?.let { append(" $it") }
+            obj.long("src")?.let { append(" src=$it") }
+            obj.long("dst")?.let { append(" dst=$it") }
+            val mcc = obj.int("mcc"); val mnc = obj.int("mnc")
+            if (mcc != null && mnc != null) append(" ($mcc-$mnc)")
+        }
+        val color = if ((obj.int("enc") ?: 0) > 0) LogColor.RED else LogColor.NORMAL
+        push(_dmoLog, LogEntry(now(), txt, color), ACTIVITY_CAP)
+    }
+
+    private fun onDmoStats(obj: JsonObject) {
+        _dmoStats.value = "SCH/S ${obj.int("sch_s_ok") ?: 0}/${obj.int("sch_s_total") ?: 0} · " +
+            "SCH/H ${obj.int("sch_h_ok") ?: 0} · PDU ${obj.int("n_pdus") ?: 0} · " +
+            "TCH ${obj.int("tch_sent") ?: 0}"
     }
 
     private fun onNetinfo(obj: JsonObject) {
@@ -307,6 +341,7 @@ class TetraRepository @Inject constructor(
         _call.value = CallState()
         _neighbours.value = emptyList()
         _timeslots.value = List(4) { TimeslotState() }
+        _dmoLog.value = emptyList()
     }
 
     private fun activity(text: String, color: LogColor) {

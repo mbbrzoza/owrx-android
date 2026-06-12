@@ -1,6 +1,9 @@
 package pl.sp8mb.owrx.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,6 +57,8 @@ fun TetraScreen(vm: TetraViewModel = hiltViewModel()) {
     val enc by vm.repo.encryptedLog.collectAsState()
     val afc by vm.repo.afc.collectAsState()
     val burstRate by vm.repo.burstRate.collectAsState()
+    val dmoLog by vm.repo.dmoLog.collectAsState()
+    val dmoStats by vm.repo.dmoStats.collectAsState()
 
     var tab by remember { mutableIntStateOf(0) }
 
@@ -128,10 +133,20 @@ fun TetraScreen(vm: TetraViewModel = hiltViewModel()) {
             "MS Rej. (${msReg.size})",
             "SDS (${sds.size})",
             "🔒 (${enc.size})",
+            "DMO (${dmoLog.size})",
         )
-        TabRow(selectedTabIndex = tab) {
+        androidx.compose.foundation.layout.Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
             tabs.forEachIndexed { i, label ->
-                Tab(selected = tab == i, onClick = { tab = i }, text = { Text(label, maxLines = 1) })
+                val selected = tab == i
+                TextButton(onClick = { tab = i }) {
+                    Text(
+                        label,
+                        maxLines = 1,
+                        color = if (selected) MaterialTheme.colorScheme.primary else Color.Gray,
+                    )
+                }
             }
         }
 
@@ -141,6 +156,18 @@ fun TetraScreen(vm: TetraViewModel = hiltViewModel()) {
             2 -> LogList(msReg)
             3 -> LogList(sds)
             4 -> LogList(enc)
+            5 -> Column {
+                dmoStats?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFF64B5F6),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+                LogList(dmoLog)
+            }
         }
     }
 }
