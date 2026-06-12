@@ -101,9 +101,10 @@ class WaterfallView(context: Context) : View(context) {
         val mean = sum / frame.size
         val targetMin = mean - 10f
         val targetMax = max + 10f
-        // smooth follow
-        minDb += (targetMin - minDb) * 0.05f
-        maxDb += (targetMax - maxDb) * 0.05f
+        // asymmetric follow: expand range fast, contract very slowly —
+        // symmetric per-frame tracking makes row brightness pump (striped waterfall)
+        minDb += (targetMin - minDb) * if (targetMin < minDb) 0.5f else 0.005f
+        maxDb += (targetMax - maxDb) * if (targetMax > maxDb) 0.5f else 0.005f
         if (maxDb - minDb < 20f) maxDb = minDb + 20f
     }
 

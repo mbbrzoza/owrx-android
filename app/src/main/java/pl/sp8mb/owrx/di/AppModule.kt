@@ -26,7 +26,11 @@ object AppModule {
     @Singleton
     fun provideOkHttpClient(): OkHttpClient =
         OkHttpClient.Builder()
-            .pingInterval(15, TimeUnit.SECONDS)
+            // NO pingInterval: the OpenWebRX python websocket server does not
+            // answer client pings (verified empirically — browsers never ping,
+            // so the bug is invisible in web use). OkHttp would kill the
+            // connection on every missed pong, causing a reconnect loop.
+            // Dead links are detected by OwrxSession's 30 s silence watchdog.
             .readTimeout(0, TimeUnit.MILLISECONDS)
             .connectTimeout(10, TimeUnit.SECONDS)
             .build()

@@ -176,6 +176,9 @@ class OwrxSession @Inject constructor(
     }
 
     private fun openSocket(url: String) {
+        // kill any previous socket first — two live sockets would feed the
+        // shared decoders from two reader threads (observed AIOOBE race)
+        webSocket?.cancel()
         handshaken = false
         _connectionState.value = ConnectionState.Connecting(url)
         val request = Request.Builder().url(url).apply {
@@ -184,13 +187,18 @@ class OwrxSession @Inject constructor(
         webSocket = httpClient.newWebSocket(request, listener)
     }
 
+    /** True if this callback comes from the current socket; stale sockets are ignored. */
+    private fun isCurrent(ws: WebSocket) = ws === webSocket
+
     private val listener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            if (!isCurrent(webSocket)) return
             lastRxAt.set(System.currentTimeMillis())
             webSocket.send(ClientCommand.HANDSHAKE)
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
+            if (!isCurrent(webSocket)) return
             lastRxAt.set(System.currentTimeMillis())
             if (!handshaken) {
                 if (text.startsWith("CLIENT DE SERVER")) {
@@ -209,22 +217,31 @@ class OwrxSession @Inject constructor(
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+            if (!isCurrent(webSocket)) return
             lastRxAt.set(System.currentTimeMillis())
             if (bytes.size < 1) return
             val payload = bytes.toByteArray()
-            when (payload[0].toInt()) {
-                1 -> _fft.tryEmit(fftDecoder.decode(payload.copyOfRange(1, payload.size)))
-                2 -> audioPipeline.submit(audioDecoder.decode(payload.copyOfRange(1, payload.size)), hd = false)
-                3 -> {} // secondary FFT — not used yet
-                4 -> audioPipeline.submit(hdAudioDecoder.decode(payload.copyOfRange(1, payload.size)), hd = true)
+            try {
+                when (payload[0].toInt()) {
+                    1 -> _fft.tryEmit(fftDecoder.decode(payload.copyOfRange(1, payload.size)))
+                    2 -> audioPipeline.submit(audioDecoder.decode(payload.copyOfRange(1, payload.size)), hd = false)
+                    3 -> {} // secondary FFT — not used yet
+                    4 -> audioPipeline.submit(hdAudioDecoder.decode(payload.copyOfRange(1, payload.size)), hd = true)
+                }
+            } catch (e: Exception) {
+                // a decoder hiccup must not kill the connection
+                android.util.Log.w("OwrxSession", "binary frame decode error", e)
             }
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            if (!isCurrent(webSocket)) return
             scheduleReconnect("closed: $code $reason")
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            if (!isCurrent(webSocket)) return
+            android.util.Log.w("OwrxSession", "ws failure", t)
             scheduleReconnect("failure: ${t.message}")
         }
     }
@@ -294,6 +311,7 @@ class OwrxSession @Inject constructor(
     }
 
     private fun scheduleReconnect(reason: String) {
+        android.util.Log.w("OwrxSession", "connection lost: $reason")
         audioDecoder.reset()
         hdAudioDecoder.reset()
         if (!shouldRun) {
