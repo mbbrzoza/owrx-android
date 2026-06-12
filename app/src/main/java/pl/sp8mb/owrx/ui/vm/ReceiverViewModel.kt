@@ -42,9 +42,14 @@ class ReceiverViewModel @Inject constructor(
     val digitalVoice = dvoice.active
 
     val muted = audioPipeline.userMuted
+    val volume = audioPipeline.volume
 
     fun toggleMute() {
         audioPipeline.userMuted.value = !audioPipeline.userMuted.value
+    }
+
+    fun setVolume(v: Float) {
+        audioPipeline.volume.value = v
     }
 
     // ── recording ──

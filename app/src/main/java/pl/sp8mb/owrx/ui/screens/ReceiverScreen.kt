@@ -5,7 +5,9 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -245,12 +247,39 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                androidx.compose.material3.IconButton(onClick = vm::toggleMute) {
-                    Icon(
-                        if (muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                        contentDescription = "Wycisz",
-                        tint = if (muted) Color(0xFFFF6060) else MaterialTheme.colorScheme.onSurface,
-                    )
+                var showVolume by remember { mutableStateOf(false) }
+                Box {
+                    androidx.compose.material3.IconButton(
+                        onClick = vm::toggleMute,
+                        modifier = Modifier.pointerInput(Unit) {
+                            detectTapGestures(onLongPress = { showVolume = true })
+                        },
+                    ) {
+                        Icon(
+                            if (muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                            contentDescription = "Wycisz (przytrzymaj = głośność)",
+                            tint = if (muted) Color(0xFFFF6060) else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    androidx.compose.material3.DropdownMenu(
+                        expanded = showVolume,
+                        onDismissRequest = { showVolume = false },
+                    ) {
+                        val vol by vm.volume.collectAsState()
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp).width(200.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("Głośność", style = MaterialTheme.typography.bodySmall)
+                            Slider(
+                                value = vol,
+                                onValueChange = { vm.setVolume(it) },
+                                valueRange = 0f..2f,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text("%.0f%%".format(vol * 100), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                        }
+                    }
                 }
                 Text("SQ", style = MaterialTheme.typography.bodySmall)
                 Slider(

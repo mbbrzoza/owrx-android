@@ -26,6 +26,9 @@ class AudioPipeline @Inject constructor(
     /** User-controlled mute (UI toggle). */
     val userMuted = kotlinx.coroutines.flow.MutableStateFlow(false)
 
+    /** Software volume gain (0..2, 1 = unity); applied to PCM with saturation. */
+    val volume = kotlinx.coroutines.flow.MutableStateFlow(1.0f)
+
     @Volatile
     private var focusMuted = false
 
@@ -119,11 +122,22 @@ class AudioPipeline @Inject constructor(
                 }
                 recorder?.feed(chunk.pcm, chunk.sampleRate)
                 if (muted) continue
-                track.write(chunk.pcm, 0, chunk.pcm.size)
+                val g = volume.value
+                val out = if (g == 1.0f) chunk.pcm else applyGain(chunk.pcm, g)
+                track.write(out, 0, out.size)
             }
         } finally {
             track?.release()
         }
+    }
+
+    private fun applyGain(pcm: ShortArray, gain: Float): ShortArray {
+        val out = ShortArray(pcm.size)
+        for (i in pcm.indices) {
+            val v = (pcm[i] * gain).toInt()
+            out[i] = if (v > 32767) 32767 else if (v < -32768) -32768 else v.toShort()
+        }
+        return out
     }
 
     private fun createTrack(sampleRate: Int): AudioTrack {
