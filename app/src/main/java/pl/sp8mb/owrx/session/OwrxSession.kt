@@ -273,7 +273,15 @@ class OwrxSession @Inject constructor(
                 }
             }
             is ServerMessage.Profiles -> _profiles.value = msg.profiles
-            is ServerMessage.SMeter -> _smeter.value = msg.level
+            is ServerMessage.SMeter -> {
+                // server sends LINEAR power (csdr squelch_and_smeter_cc);
+                // the web client converts with 10*log10 — so do we
+                _smeter.value = if (msg.level > 0f) {
+                    (10.0 * kotlin.math.log10(msg.level.toDouble())).toFloat().coerceIn(-150f, 0f)
+                } else {
+                    -150f
+                }
+            }
             is ServerMessage.Metadata -> _metadata.tryEmit(msg.value)
             is ServerMessage.Backoff -> {
                 _backoff.value = msg.reason.ifEmpty { "server backoff" }
