@@ -225,17 +225,22 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                 )
                 TextButton(onClick = vm::autoSquelch) { Text("Auto") }
 
-                // RF gain of the current profile (needs OWRX admin credentials)
-                val gain by vm.gainText.collectAsState()
+                // device gain (auto/manual) — needs OWRX admin credentials
+                val gain by vm.gainState.collectAsState()
                 gain?.let { g ->
-                    Text("  RF", style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { vm.adjustGain(-1f) }) { Text("−") }
+                    FilterChip(
+                        selected = g.auto,
+                        onClick = { vm.setGainAuto(!g.auto) },
+                        label = { Text("AGC") },
+                    )
+                    TextButton(onClick = { vm.adjustGain(-1f) }, enabled = !g.auto) { Text("−") }
                     Text(
-                        g,
+                        if (g.auto) "auto" else "%.0f".format(g.manual),
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
+                        color = if (g.auto) Color.Gray else MaterialTheme.colorScheme.onSurface,
                     )
-                    TextButton(onClick = { vm.adjustGain(+1f) }) { Text("+") }
+                    TextButton(onClick = { vm.adjustGain(+1f) }, enabled = !g.auto) { Text("+") }
                 }
             }
 

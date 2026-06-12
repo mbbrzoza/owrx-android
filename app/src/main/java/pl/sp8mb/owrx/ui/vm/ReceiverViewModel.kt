@@ -57,10 +57,12 @@ class ReceiverViewModel @Inject constructor(
         }
     }
 
-    // ── RF gain via the admin panel (gain is a server-side profile property) ──
+    // ── device gain via the admin panel (rf_gain-select/-manual on the DEVICE form) ──
 
-    /** Current rf_gain as text, or null when admin access is unavailable. */
-    val gainText = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    data class GainState(val auto: Boolean, val manual: Float)
+
+    /** Current device gain, or null when admin access is unavailable. */
+    val gainState = kotlinx.coroutines.flow.MutableStateFlow<GainState?>(null)
 
     private var adminClient: pl.sp8mb.owrx.admin.AdminClient? = null
     private var gainForm: pl.sp8mb.owrx.admin.AdminClient.FormPage? = null
@@ -87,29 +89,41 @@ class ReceiverViewModel @Inject constructor(
         }
     }
 
-    private suspend fun loadGain(sdrId: String, profileId: String) {
-        val client = ensureAdmin() ?: run { gainText.value = null; return }
+    private suspend fun loadGain(sdrId: String) {
+        val client = ensureAdmin() ?: run { gainState.value = null; return }
         try {
-            val path = "/settings/sdr/$sdrId/profile/$profileId"
+            // device gain lives on the DEVICE form, not the profile form
+            val path = "/settings/sdr/$sdrId"
             val form = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 client.loadForm(path)
             }
-            val gain = form.fields.firstOrNull { it.name.contains("rf_gain") }
+            val select = form.fields.firstOrNull { it.name == "rf_gain-select" }
+            val manual = form.fields.firstOrNull { it.name == "rf_gain-manual" }
             gainPath = path
             gainForm = form
-            gainText.value = gain?.value
+            gainState.value = if (select != null) {
+                GainState(
+                    auto = select.value == "auto",
+                    manual = manual?.value?.toFloatOrNull() ?: 0f,
+                )
+            } else {
+                null
+            }
         } catch (e: Exception) {
-            gainText.value = null
+            gainState.value = null
         }
     }
 
-    /** Set rf_gain (number or "auto"); submission debounced to limit SDR restarts. */
-    fun setGain(value: String) {
+    private fun submitGain(auto: Boolean, manual: Float) {
         val form = gainForm ?: return
-        gainText.value = value
+        gainState.value = GainState(auto, manual)
         gainForm = form.copy(
             fields = form.fields.map {
-                if (it.name.contains("rf_gain")) it.copy(value = value) else it
+                when (it.name) {
+                    "rf_gain-select" -> it.copy(value = if (auto) "auto" else "manual")
+                    "rf_gain-manual" -> it.copy(value = "%.1f".format(manual).replace(',', '.'))
+                    else -> it
+                }
             }
         )
         gainSubmitJob?.cancel()
@@ -127,9 +141,14 @@ class ReceiverViewModel @Inject constructor(
         }
     }
 
+    fun setGainAuto(auto: Boolean) {
+        val g = gainState.value ?: return
+        submitGain(auto, g.manual)
+    }
+
     fun adjustGain(delta: Float) {
-        val current = gainText.value?.toFloatOrNull() ?: 20f
-        setGain("%.1f".format(current + delta).replace(',', '.').removeSuffix(".0"))
+        val g = gainState.value ?: return
+        submitGain(auto = false, manual = (g.manual + delta).coerceIn(0f, 60f))
     }
 
     /** Web-style auto squelch: current S-meter + configured margin. */
@@ -189,14 +208,14 @@ class ReceiverViewModel @Inject constructor(
                     if (merged.size != current.size) prefs.saveFavorites(merged)
                 }
         }
-        // refresh RF gain whenever the active profile changes (admin access required)
+        // refresh device gain whenever the active SDR changes (admin access required)
         viewModelScope.launch {
             session.radioConfig
-                .map { it.sdrId to it.profileId }
+                .map { it.sdrId }
                 .distinctUntilChanged()
-                .collect { (sdr, profile) ->
+                .collect { sdr ->
                     gainForm = null
-                    if (sdr != null && profile != null) loadGain(sdr, profile) else gainText.value = null
+                    if (sdr != null) loadGain(sdr) else gainState.value = null
                 }
         }
         // complete a cross-band favorite jump once the new profile's config arrives
