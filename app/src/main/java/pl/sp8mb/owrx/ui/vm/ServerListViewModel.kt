@@ -42,6 +42,7 @@ class ServerListViewModel @Inject constructor(
         viewModelScope.launch {
             prefs.setLastServer(server.id)
             prefs.desiredState.first()?.let { session.restoreDesiredState(it) }
+            session.magicKey = server.magicKey
             OwrxForegroundService.start(getApplication())
             session.connect(server.wsUrl(), server.username, server.password)
         }

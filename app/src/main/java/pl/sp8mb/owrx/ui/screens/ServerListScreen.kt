@@ -123,6 +123,7 @@ private fun ServerEditDialog(
     var password by remember { mutableStateOf(initial?.password ?: "") }
     var adminUser by remember { mutableStateOf(initial?.adminUser ?: "") }
     var adminPassword by remember { mutableStateOf(initial?.adminPassword ?: "") }
+    var magicKey by remember { mutableStateOf(initial?.magicKey ?: "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -140,6 +141,7 @@ private fun ServerEditDialog(
                 OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Hasło (opcjonalnie)") }, singleLine = true)
                 OutlinedTextField(value = adminUser, onValueChange = { adminUser = it }, label = { Text("Admin OWRX — login (opcjonalnie)") }, singleLine = true)
                 OutlinedTextField(value = adminPassword, onValueChange = { adminPassword = it }, label = { Text("Admin OWRX — hasło") }, singleLine = true)
+                OutlinedTextField(value = magicKey, onValueChange = { magicKey = it }, label = { Text("Magic key (zmiana center freq)") }, singleLine = true)
             }
         },
         confirmButton = {
@@ -154,6 +156,7 @@ private fun ServerEditDialog(
                                 password = password.ifEmpty { null },
                                 adminUser = adminUser.trim().ifEmpty { null },
                                 adminPassword = adminPassword.ifEmpty { null },
+                                magicKey = magicKey.trim().ifEmpty { null },
                             )
                         )
                     }

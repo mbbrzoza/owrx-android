@@ -153,6 +153,13 @@ class OwrxSession @Inject constructor(
         send(ClientCommand.selectProfile(profileId))
     }
 
+    /** magic key for center-freq changes; set from the active server. */
+    var magicKey: String? = null
+
+    fun setCenterFrequency(freqHz: Long) {
+        send(ClientCommand.setFrequency(freqHz, magicKey))
+    }
+
     fun setDsp(
         offsetFreq: Int? = null,
         mod: String? = null,

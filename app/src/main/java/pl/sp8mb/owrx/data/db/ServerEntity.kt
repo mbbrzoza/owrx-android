@@ -19,6 +19,8 @@ data class ServerEntity(
     /** OpenWebRX admin panel credentials (for SDR/profile management) */
     val adminUser: String? = null,
     val adminPassword: String? = null,
+    /** magic key for center-frequency changes (server's magic_key setting) */
+    val magicKey: String? = null,
 ) {
     fun wsUrl(): String = when {
         address.startsWith("ws://") || address.startsWith("wss://") -> address

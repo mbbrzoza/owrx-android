@@ -40,6 +40,15 @@ object ClientCommand {
             }
         }.toString()
 
+    fun setFrequency(freqHz: Long, magicKey: String? = null): String =
+        buildJsonObject {
+            put("type", "setfrequency")
+            putJsonObject("params") {
+                put("frequency", freqHz)
+                if (magicKey != null) put("key", magicKey)
+            }
+        }.toString()
+
     fun sendMessage(text: String, name: String? = null): String =
         buildJsonObject {
             put("type", "sendmessage")

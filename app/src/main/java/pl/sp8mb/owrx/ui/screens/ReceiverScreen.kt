@@ -397,13 +397,18 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
         }
 
         if (showFreqDialog) {
+            val canMove by vm.canMoveCenter.collectAsState()
             FreqEntryDialog(
                 currentMhz = if (tunedFreq > 0) "%.4f".format(tunedFreq / 1e6).replace(',', '.') else "",
+                canMoveCenter = canMove,
                 onDismiss = { showFreqDialog = false },
                 onTune = { mhz ->
                     showFreqDialog = false
-                    val freq = (mhz * 1e6).toLong()
-                    vm.tuneAnywhere(freq)
+                    vm.tuneAnywhere((mhz * 1e6).toLong())
+                },
+                onMoveCenter = { mhz ->
+                    showFreqDialog = false
+                    vm.moveCenter((mhz * 1e6).toLong())
                 },
             )
         }
@@ -568,8 +573,10 @@ private fun ChatDialog(
 @Composable
 private fun FreqEntryDialog(
     currentMhz: String,
+    canMoveCenter: Boolean,
     onDismiss: () -> Unit,
     onTune: (Double) -> Unit,
+    onMoveCenter: (Double) -> Unit,
 ) {
     var text by remember { mutableStateOf(currentMhz) }
     val parsed = text.replace(',', '.').toDoubleOrNull()
@@ -577,21 +584,39 @@ private fun FreqEntryDialog(
         onDismissRequest = onDismiss,
         title = { Text("Częstotliwość (MHz)") },
         text = {
-            androidx.compose.material3.OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text("MHz") },
-                singleLine = true,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
-                ),
-            )
+            Column {
+                androidx.compose.material3.OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("MHz") },
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                    ),
+                )
+                if (canMoveCenter) {
+                    Text(
+                        "Przesuń SDR przestawia środek odbiornika WSZYSTKIM słuchaczom.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFE0A040),
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
         },
         confirmButton = {
-            TextButton(
-                onClick = { parsed?.let(onTune) },
-                enabled = parsed != null && parsed > 0,
-            ) { Text("Strój") }
+            Row {
+                if (canMoveCenter) {
+                    TextButton(
+                        onClick = { parsed?.let(onMoveCenter) },
+                        enabled = parsed != null && parsed > 0,
+                    ) { Text("Przesuń SDR") }
+                }
+                TextButton(
+                    onClick = { parsed?.let(onTune) },
+                    enabled = parsed != null && parsed > 0,
+                ) { Text("Strój") }
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Anuluj") } },
     )

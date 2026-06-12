@@ -324,6 +324,18 @@ class ReceiverViewModel @Inject constructor(
         return true
     }
 
+    /** True if the server allows moving the SDR centre frequency. */
+    val canMoveCenter: StateFlow<Boolean> = session.radioConfig
+        .map { it.allowCenterFreqChanges }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Move the SDR centre frequency so [freqHz] becomes tunable. */
+    fun moveCenter(freqHz: Long) {
+        session.setCenterFrequency(freqHz)
+        // tune to it once the new config lands
+        pendingFavorite = pl.sp8mb.owrx.data.prefs.Favorite("", freqHz, currentMod.value, null)
+    }
+
     /** Tune to a favorite — switching profile first when it lives in another band. */
     fun tuneToFavorite(fav: pl.sp8mb.owrx.data.prefs.Favorite) {
         val cfg = session.radioConfig.value

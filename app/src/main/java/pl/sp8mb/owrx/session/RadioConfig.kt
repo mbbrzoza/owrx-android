@@ -21,12 +21,14 @@ data class RadioConfig(
     val sdrId: String? = null,
     val profileId: String? = null,
     val initialSquelchLevel: Float? = null,
+    val allowCenterFreqChanges: Boolean = false,
     val raw: Map<String, String> = emptyMap(),
 ) {
     fun merge(v: JsonObject): RadioConfig {
         fun str(key: String): String? = (v[key] as? JsonPrimitive)?.contentOrNull
         fun int(key: String): Int? = (v[key] as? JsonPrimitive)?.intOrNull
         fun long(key: String): Long? = (v[key] as? JsonPrimitive)?.longOrNull
+        fun bool(key: String): Boolean? = (v[key] as? JsonPrimitive)?.contentOrNull?.toBooleanStrictOrNull()
 
         return copy(
             centerFreq = long("center_freq") ?: centerFreq,
@@ -40,6 +42,7 @@ data class RadioConfig(
             profileId = str("profile_id") ?: profileId,
             initialSquelchLevel = (v["initial_squelch_level"] as? JsonPrimitive)
                 ?.contentOrNull?.toFloatOrNull() ?: initialSquelchLevel,
+            allowCenterFreqChanges = bool("allow_center_freq_changes") ?: allowCenterFreqChanges,
             raw = raw + v.mapValues { (it.value as? JsonPrimitive)?.contentOrNull ?: it.value.toString() },
         )
     }
