@@ -7,13 +7,20 @@ import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.os.Environment
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -31,9 +38,23 @@ class AudioRecorder @Inject constructor(
         val startedAt: Long = 0,
         val filePath: String? = null,
         val lastFinishedFile: String? = null,
+        /** true when started automatically by VOX (squelch-open) */
+        val vox: Boolean = false,
     )
 
     val state = MutableStateFlow(State())
+
+    /** VOX (auto-record on squelch-open) settings. */
+    val voxEnabled = MutableStateFlow(false)
+    private var voxHangMs = 1500L
+
+    /** Frequency/label for auto-named VOX files; updated by the receiver VM. */
+    @Volatile
+    var labelProvider: () -> String = { "vox" }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var voxWatchdog: Job? = null
+    private val lastFeedAt = AtomicLong(0)
 
     private var codec: MediaCodec? = null
     private var muxer: MediaMuxer? = null
@@ -44,7 +65,31 @@ class AudioRecorder @Inject constructor(
     private val bufferInfo = MediaCodec.BufferInfo()
     private val lock = Any()
 
-    fun start(rate: Int, label: String) {
+    fun setVox(enabled: Boolean, hangMs: Long = 1500L) {
+        voxHangMs = hangMs
+        voxEnabled.value = enabled
+        voxWatchdog?.cancel()
+        if (enabled) {
+            voxWatchdog = scope.launch {
+                while (voxEnabled.value) {
+                    delay(250)
+                    val st = state.value
+                    if (st.recording && st.vox &&
+                        System.currentTimeMillis() - lastFeedAt.get() > voxHangMs
+                    ) {
+                        synchronized(lock) { stopLocked() }
+                    }
+                }
+            }
+        } else {
+            // turning VOX off ends any auto-started recording
+            synchronized(lock) { if (state.value.vox) stopLocked() }
+        }
+    }
+
+    fun start(rate: Int, label: String) = synchronized(lock) { startLocked(rate, label, vox = false) }
+
+    private fun startLocked(rate: Int, label: String, vox: Boolean) {
         synchronized(lock) {
             if (state.value.recording) return
             val dir = context?.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: return
@@ -66,13 +111,25 @@ class AudioRecorder @Inject constructor(
             muxerStarted = false
             sampleRate = rate
             totalSamples = 0
-            state.value = State(recording = true, startedAt = System.currentTimeMillis(), filePath = file.absolutePath)
+            state.value = State(
+                recording = true,
+                startedAt = System.currentTimeMillis(),
+                filePath = file.absolutePath,
+                vox = vox,
+            )
         }
     }
 
     /** Called from the audio writer thread with each PCM chunk. */
     fun feed(pcm: ShortArray, rate: Int) {
         synchronized(lock) {
+            // VOX: audio arriving means squelch is open → start a new file
+            if (voxEnabled.value) {
+                lastFeedAt.set(System.currentTimeMillis())
+                if (!state.value.recording && pcm.isNotEmpty()) {
+                    startLocked(rate, labelProvider(), vox = true)
+                }
+            }
             val c = codec ?: return
             if (!state.value.recording) return
             if (rate != sampleRate) {

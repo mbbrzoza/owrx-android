@@ -284,6 +284,12 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                     }
                 }
 
+                val voxOn by vm.voxEnabled.collectAsState()
+                FilterChip(
+                    selected = voxOn,
+                    onClick = vm::toggleVox,
+                    label = { Text("VOX") },
+                )
                 if (recState.recording) {
                     var elapsed by remember { mutableStateOf(0L) }
                     LaunchedEffect(recState.startedAt) {
@@ -293,7 +299,7 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                         }
                     }
                     Text(
-                        "%d:%02d".format(elapsed / 60, elapsed % 60),
+                        (if (recState.vox) "◉" else "") + "%d:%02d".format(elapsed / 60, elapsed % 60),
                         color = Color(0xFFFF6060),
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,

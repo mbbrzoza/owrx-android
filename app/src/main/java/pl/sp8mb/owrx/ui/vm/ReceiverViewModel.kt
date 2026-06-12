@@ -47,6 +47,12 @@ class ReceiverViewModel @Inject constructor(
     // ── recording ──
 
     val recorderState = recorder.state
+    val voxEnabled = recorder.voxEnabled
+
+    init {
+        // VOX file names follow the live frequency
+        recorder.labelProvider = { "%.4fMHz".format(tunedFreq.value / 1e6).replace(',', '.') }
+    }
 
     fun toggleRecording() {
         if (recorder.state.value.recording) {
@@ -55,6 +61,11 @@ class ReceiverViewModel @Inject constructor(
             val rate = pl.sp8mb.owrx.session.AudioPipeline.BASE_RATE
             recorder.start(rate, "%.4fMHz".format(tunedFreq.value / 1e6).replace(',', '.'))
         }
+    }
+
+    /** VOX: auto-record each transmission (starts when squelch opens). */
+    fun toggleVox() {
+        recorder.setVox(!recorder.voxEnabled.value)
     }
 
     // ── device gain via the admin panel (rf_gain-select/-manual on the DEVICE form) ──
