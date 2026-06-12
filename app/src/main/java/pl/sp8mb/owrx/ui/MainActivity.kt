@@ -39,11 +39,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import dagger.hilt.android.AndroidEntryPoint
+import pl.sp8mb.owrx.ui.screens.AdminScreen
 import pl.sp8mb.owrx.ui.screens.ReceiverScreen
 import pl.sp8mb.owrx.ui.screens.ScannerScreen
 import pl.sp8mb.owrx.ui.screens.ServerListScreen
@@ -146,11 +149,20 @@ private fun OwrxApp() {
             modifier = Modifier.padding(padding),
         ) {
             composable("servers") {
-                ServerListScreen(onConnected = { navController.navigate("receiver") })
+                ServerListScreen(
+                    onConnected = { navController.navigate("receiver") },
+                    onAdmin = { id -> navController.navigate("admin/$id") },
+                )
             }
             composable("receiver") { ReceiverScreen() }
             composable("scanner") { ScannerScreen() }
             composable("tetra") { TetraScreen() }
+            composable(
+                "admin/{serverId}",
+                arguments = listOf(navArgument("serverId") { type = NavType.LongType }),
+            ) {
+                AdminScreen(onExit = { navController.popBackStack() })
+            }
         }
     }
 }

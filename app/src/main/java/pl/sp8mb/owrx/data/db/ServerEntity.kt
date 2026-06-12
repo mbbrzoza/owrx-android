@@ -16,11 +16,22 @@ data class ServerEntity(
     val address: String,
     val username: String? = null,
     val password: String? = null,
+    /** OpenWebRX admin panel credentials (for SDR/profile management) */
+    val adminUser: String? = null,
+    val adminPassword: String? = null,
 ) {
     fun wsUrl(): String = when {
         address.startsWith("ws://") || address.startsWith("wss://") -> address
         address.contains(":") -> "ws://$address/ws/"
         else -> "wss://$address/ws/"
+    }
+
+    /** Base http(s) URL of the same server. */
+    fun httpUrl(): String = when {
+        address.startsWith("ws://") -> "http://" + address.removePrefix("ws://").removeSuffix("/ws/").removeSuffix("/")
+        address.startsWith("wss://") -> "https://" + address.removePrefix("wss://").removeSuffix("/ws/").removeSuffix("/")
+        address.contains(":") -> "http://$address"
+        else -> "https://$address"
     }
 }
 

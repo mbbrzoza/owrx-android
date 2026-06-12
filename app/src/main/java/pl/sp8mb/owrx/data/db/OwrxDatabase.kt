@@ -5,7 +5,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [ServerEntity::class, ScanHitEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class OwrxDatabase : RoomDatabase() {

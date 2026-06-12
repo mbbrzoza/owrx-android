@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.FloatingActionButton
@@ -38,6 +39,7 @@ import pl.sp8mb.owrx.ui.vm.ServerListViewModel
 @Composable
 fun ServerListScreen(
     onConnected: () -> Unit,
+    onAdmin: (Long) -> Unit = {},
     vm: ServerListViewModel = hiltViewModel(),
 ) {
     val servers by vm.servers.collectAsState()
@@ -79,6 +81,11 @@ fun ServerListScreen(
                                 Text("🔒 basic auth", style = MaterialTheme.typography.bodySmall)
                             }
                         }
+                        if (server.adminUser != null) {
+                            IconButton(onClick = { onAdmin(server.id) }) {
+                                Icon(Icons.Default.Settings, contentDescription = "Admin SDR")
+                            }
+                        }
                         IconButton(onClick = {
                             editing = server
                             showDialog = true
@@ -114,6 +121,8 @@ private fun ServerEditDialog(
     var address by remember { mutableStateOf(initial?.address ?: "") }
     var username by remember { mutableStateOf(initial?.username ?: "") }
     var password by remember { mutableStateOf(initial?.password ?: "") }
+    var adminUser by remember { mutableStateOf(initial?.adminUser ?: "") }
+    var adminPassword by remember { mutableStateOf(initial?.adminPassword ?: "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -129,6 +138,8 @@ private fun ServerEditDialog(
                 )
                 OutlinedTextField(value = username, onValueChange = { username = it }, label = { Text("Login (opcjonalnie)") }, singleLine = true)
                 OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Hasło (opcjonalnie)") }, singleLine = true)
+                OutlinedTextField(value = adminUser, onValueChange = { adminUser = it }, label = { Text("Admin OWRX — login (opcjonalnie)") }, singleLine = true)
+                OutlinedTextField(value = adminPassword, onValueChange = { adminPassword = it }, label = { Text("Admin OWRX — hasło") }, singleLine = true)
             }
         },
         confirmButton = {
@@ -141,6 +152,8 @@ private fun ServerEditDialog(
                                 address = address.trim(),
                                 username = username.trim().ifEmpty { null },
                                 password = password.ifEmpty { null },
+                                adminUser = adminUser.trim().ifEmpty { null },
+                                adminPassword = adminPassword.ifEmpty { null },
                             )
                         )
                     }
