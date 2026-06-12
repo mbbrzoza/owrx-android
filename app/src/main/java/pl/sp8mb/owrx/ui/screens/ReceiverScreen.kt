@@ -290,20 +290,23 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                     onClick = vm::toggleVox,
                     label = { Text("VOX") },
                 )
-                if (recState.recording) {
-                    var elapsed by remember { mutableStateOf(0L) }
-                    LaunchedEffect(recState.startedAt) {
-                        while (true) {
-                            elapsed = (System.currentTimeMillis() - recState.startedAt) / 1000
-                            kotlinx.coroutines.delay(1000)
+                // fixed-width slot so the toolbar never reflows when REC starts
+                Box(modifier = Modifier.width(52.dp), contentAlignment = Alignment.Center) {
+                    if (recState.recording) {
+                        var elapsed by remember { mutableStateOf(0L) }
+                        LaunchedEffect(recState.startedAt) {
+                            while (true) {
+                                elapsed = (System.currentTimeMillis() - recState.startedAt) / 1000
+                                kotlinx.coroutines.delay(1000)
+                            }
                         }
+                        Text(
+                            (if (recState.vox) "◉" else "") + "%d:%02d".format(elapsed / 60, elapsed % 60),
+                            color = Color(0xFFFF6060),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                        )
                     }
-                    Text(
-                        (if (recState.vox) "◉" else "") + "%d:%02d".format(elapsed / 60, elapsed % 60),
-                        color = Color(0xFFFF6060),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                    )
                 }
                 androidx.compose.material3.IconButton(onClick = vm::toggleRecording) {
                     Icon(

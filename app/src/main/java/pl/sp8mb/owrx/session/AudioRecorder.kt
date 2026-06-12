@@ -164,34 +164,49 @@ class AudioRecorder @Inject constructor(
 
     private fun stopLocked() {
         val c = codec ?: return
+        val finishedPath = state.value.filePath
+        // stop feed() from queueing more input while we drain
+        state.value = state.value.copy(recording = false)
         try {
-            val inIdx = c.dequeueInputBuffer(10_000)
+            val inIdx = c.dequeueInputBuffer(50_000)
             if (inIdx >= 0) {
                 c.queueInputBuffer(inIdx, 0, 0, totalSamples * 1_000_000L / sampleRate, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
             }
-            drainLocked(true)
+            // drain the encoder until it reports end-of-stream so the muxer
+            // gets every sample before we close it (else moov is never written)
+            drainLocked(endOfStream = true)
         } catch (e: Exception) {
-            android.util.Log.w("AudioRecorder", "stop", e)
+            android.util.Log.w("AudioRecorder", "drain on stop", e)
+        }
+        // muxer first (writes moov), then the codec
+        try {
+            if (muxerStarted) muxer?.stop()
+            muxer?.release()
+        } catch (e: Exception) {
+            android.util.Log.w("AudioRecorder", "muxer stop", e)
         }
         try {
             c.stop()
             c.release()
         } catch (e: Exception) { /* already dead */ }
-        try {
-            if (muxerStarted) muxer?.stop()
-            muxer?.release()
-        } catch (e: Exception) { /* empty recording */ }
         codec = null
         muxer = null
-        state.value = State(lastFinishedFile = state.value.filePath)
+        muxerStarted = false
+        state.value = State(lastFinishedFile = finishedPath)
+        android.util.Log.i("AudioRecorder", "finalized $finishedPath")
     }
 
     private fun drainLocked(endOfStream: Boolean) {
         val c = codec ?: return
         val m = muxer ?: return
+        var idleTries = 0
         while (true) {
-            val outIdx = c.dequeueOutputBuffer(bufferInfo, if (endOfStream) 10_000 else 0)
+            val outIdx = c.dequeueOutputBuffer(bufferInfo, if (endOfStream) 50_000 else 0)
             when {
+                outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                    // keep waiting for the EOS-flagged output; bounded ~5s
+                    if (!endOfStream || ++idleTries > 100) return
+                }
                 outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                     trackIndex = m.addTrack(c.outputFormat)
                     m.start()
@@ -207,7 +222,6 @@ class AudioRecorder @Inject constructor(
                     c.releaseOutputBuffer(outIdx, false)
                     if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
                 }
-                else -> return
             }
         }
     }
