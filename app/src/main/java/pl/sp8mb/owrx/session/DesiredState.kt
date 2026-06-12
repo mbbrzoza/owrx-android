@@ -12,6 +12,8 @@ data class DesiredState(
     val squelchLevel: Float? = null,
     val lowCut: Int? = null,
     val highCut: Int? = null,
+    val nrEnabled: Boolean? = null,
+    val nrThreshold: Int? = null,
 ) {
     fun dspParams(): Map<String, Any?> = buildMap {
         offsetFreq?.let { put("offset_freq", it) }
@@ -19,5 +21,7 @@ data class DesiredState(
         squelchLevel?.let { put("squelch_level", it) }
         lowCut?.let { put("low_cut", it) }
         highCut?.let { put("high_cut", it) }
+        nrEnabled?.let { put("nr_enabled", it) }
+        nrThreshold?.let { put("nr_threshold", it) }
     }
 }

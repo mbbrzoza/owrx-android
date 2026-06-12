@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +22,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
@@ -219,6 +222,46 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                 )
+                TextButton(onClick = vm::autoSquelch) { Text("Auto") }
+            }
+
+            // ── audio / display tools: mute, NR, waterfall colours ──
+            val muted by vm.muted.collectAsState()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                androidx.compose.material3.IconButton(onClick = vm::toggleMute) {
+                    Icon(
+                        if (muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = "Wycisz",
+                        tint = if (muted) Color(0xFFFF6060) else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                FilterChip(
+                    selected = desired.nrEnabled == true,
+                    onClick = { vm.setNr(desired.nrEnabled != true, desired.nrThreshold ?: 4) },
+                    label = { Text("NR") },
+                )
+                if (desired.nrEnabled == true) {
+                    Slider(
+                        value = (desired.nrThreshold ?: 4).toFloat(),
+                        onValueChange = { vm.setNr(true, it.toInt()) },
+                        valueRange = 0f..30f,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "${desired.nrThreshold ?: 4}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+                TextButton(onClick = { waterfall?.snapLevels() }) { Text("Kolory") }
             }
         }
 

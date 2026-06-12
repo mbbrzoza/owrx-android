@@ -22,8 +22,14 @@ class AudioPipeline @Inject constructor(
 ) {
     private var focusRequest: AudioFocusRequest? = null
 
+    /** User-controlled mute (UI toggle). */
+    val userMuted = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+    @Volatile
+    private var focusMuted = false
+
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
-        muted = change == AudioManager.AUDIOFOCUS_LOSS ||
+        focusMuted = change == AudioManager.AUDIOFOCUS_LOSS ||
             change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
     }
 
@@ -35,8 +41,7 @@ class AudioPipeline @Inject constructor(
     private var running = false
     private var thread: Thread? = null
 
-    @Volatile
-    var muted = false
+    private val muted: Boolean get() = userMuted.value || focusMuted
 
     fun start() {
         if (running) return

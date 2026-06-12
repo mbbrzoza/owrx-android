@@ -123,6 +123,23 @@ class WaterfallView(context: Context) : View(context) {
         postInvalidateOnAnimation()
     }
 
+    /** Instantly re-fit the colour range to the latest frame. */
+    fun snapLevels() {
+        val frame = lastFrame
+        if (frame.isEmpty()) return
+        var max = -Float.MAX_VALUE
+        var sum = 0f
+        for (v in frame) {
+            if (v > max) max = v
+            sum += v
+        }
+        val mean = sum / frame.size
+        minDb = mean - 10f
+        maxDb = max + 10f
+        if (maxDb - minDb < 20f) maxDb = minDb + 20f
+        invalidate()
+    }
+
     private fun updateLevels(frame: FloatArray) {
         // robust percentile-ish estimate without sorting the whole frame each time
         var min = Float.MAX_VALUE

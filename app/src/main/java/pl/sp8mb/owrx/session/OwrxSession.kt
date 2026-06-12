@@ -171,6 +171,11 @@ class OwrxSession @Inject constructor(
         if (params.isNotEmpty()) send(ClientCommand.dspParams(params))
     }
 
+    fun setNr(enabled: Boolean, threshold: Int) {
+        _desired.value = _desired.value.copy(nrEnabled = enabled, nrThreshold = threshold)
+        send(ClientCommand.dspParams(mapOf("nr_enabled" to enabled, "nr_threshold" to threshold)))
+    }
+
     /** Kicks the reconnect loop immediately (e.g. on network-available callback). */
     fun kickReconnect() {
         if (shouldRun && _connectionState.value !is ConnectionState.Connected) {

@@ -30,7 +30,22 @@ data class BookmarkItem(
 class ReceiverViewModel @Inject constructor(
     val session: OwrxSession,
     private val prefs: UserPreferences,
+    private val audioPipeline: pl.sp8mb.owrx.session.AudioPipeline,
 ) : ViewModel() {
+
+    val muted = audioPipeline.userMuted
+
+    fun toggleMute() {
+        audioPipeline.userMuted.value = !audioPipeline.userMuted.value
+    }
+
+    /** Web-style auto squelch: current S-meter + configured margin. */
+    fun autoSquelch() {
+        val margin = session.radioConfig.value.raw["squelch_auto_margin"]?.toFloatOrNull() ?: 10f
+        setSquelch((session.smeter.value + margin).coerceIn(-150f, 0f))
+    }
+
+    fun setNr(enabled: Boolean, threshold: Int) = session.setNr(enabled, threshold)
 
     val connectionState = session.connectionState
     val radioConfig = session.radioConfig
