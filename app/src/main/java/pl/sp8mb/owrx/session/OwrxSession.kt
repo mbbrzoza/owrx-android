@@ -58,6 +58,13 @@ class OwrxSession @Inject constructor(
     private val _backoff = MutableStateFlow<String?>(null)
     val backoff: StateFlow<String?> = _backoff.asStateFlow()
 
+    private val _clientCount = MutableStateFlow(0)
+    val clientCount: StateFlow<Int> = _clientCount.asStateFlow()
+
+    data class Chat(val name: String, val text: String, val color: String)
+    private val _chat = MutableStateFlow<List<Chat>>(emptyList())
+    val chat: StateFlow<List<Chat>> = _chat.asStateFlow()
+
     private val _fft = MutableSharedFlow<FloatArray>(
         extraBufferCapacity = 4,
         onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
@@ -169,6 +176,11 @@ class OwrxSession @Inject constructor(
             highCut?.let { put("high_cut", it) }
         }
         if (params.isNotEmpty()) send(ClientCommand.dspParams(params))
+    }
+
+    fun sendChat(text: String, name: String?) {
+        if (text.isBlank()) return
+        send(ClientCommand.sendMessage(text.trim(), name))
     }
 
     fun setNr(enabled: Boolean, threshold: Int) {
@@ -293,6 +305,9 @@ class OwrxSession @Inject constructor(
             is ServerMessage.Bookmarks -> _bookmarks.value = msg.value
             is ServerMessage.DialFrequencies -> _dialFrequencies.value = msg.value
             is ServerMessage.Modes -> _modes.value = parseModes(msg.value)
+            is ServerMessage.Clients -> _clientCount.value = msg.count
+            is ServerMessage.ChatMessage ->
+                _chat.value = (_chat.value + Chat(msg.name, msg.text, msg.color)).takeLast(100)
             else -> {}
         }
     }

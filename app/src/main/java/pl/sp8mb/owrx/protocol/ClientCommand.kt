@@ -40,6 +40,13 @@ object ClientCommand {
             }
         }.toString()
 
+    fun sendMessage(text: String, name: String? = null): String =
+        buildJsonObject {
+            put("type", "sendmessage")
+            put("text", text)
+            if (name != null) put("name", name)
+        }.toString()
+
     fun selectProfile(profileId: String, magicKey: String? = null): String =
         buildJsonObject {
             put("type", "selectprofile")

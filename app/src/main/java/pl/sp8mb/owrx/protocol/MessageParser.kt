@@ -41,6 +41,12 @@ object MessageParser {
                 "bands" -> ServerMessage.Bands(obj["value"]!!)
                 "metadata" -> ServerMessage.Metadata(obj["value"]!!.jsonObject)
                 "backoff" -> ServerMessage.Backoff(obj["reason"]?.jsonPrimitive?.contentOrNull ?: "")
+                "clients" -> ServerMessage.Clients(obj["value"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0)
+                "chat_message" -> ServerMessage.ChatMessage(
+                    name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "?",
+                    text = obj["text"]?.jsonPrimitive?.contentOrNull ?: "",
+                    color = obj["color"]?.jsonPrimitive?.contentOrNull ?: "white",
+                )
                 "log_message" -> ServerMessage.LogMessage(obj["value"]!!.jsonPrimitive.content)
                 "sdr_error" -> ServerMessage.SdrError(obj["value"]!!.jsonPrimitive.content)
                 "demodulator_error" -> ServerMessage.DemodulatorError(obj["value"]!!.jsonPrimitive.content)

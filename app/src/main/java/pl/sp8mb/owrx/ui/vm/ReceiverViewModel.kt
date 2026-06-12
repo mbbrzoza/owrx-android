@@ -40,6 +40,10 @@ class ReceiverViewModel @Inject constructor(
 ) : ViewModel() {
 
     val digitalVoice = dvoice.active
+    val clientCount = session.clientCount
+    val chat = session.chat
+
+    fun sendChat(text: String) = session.sendChat(text, "owrx-android")
 
     val muted = audioPipeline.userMuted
     val volume = audioPipeline.volume

@@ -78,6 +78,7 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
     var rightOpen by remember { mutableStateOf(false) }
     var showAddFavorite by remember { mutableStateOf(false) }
     var showFreqDialog by remember { mutableStateOf(false) }
+    var showChat by remember { mutableStateOf(false) }
     var waterfall by remember { mutableStateOf<WaterfallView?>(null) }
 
     LaunchedEffect(waterfall) {
@@ -132,6 +133,16 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
                         color = if (state is OwrxSession.ConnectionState.Connected) Color(0xFF7CCB7C) else Color(0xFFE0A040),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                val clients by vm.clientCount.collectAsState()
+                if (clients > 0) {
+                    Text(
+                        "👥 $clients",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .clickable { showChat = true }
+                            .padding(end = 12.dp),
                     )
                 }
                 Column(horizontalAlignment = Alignment.End) {
@@ -376,6 +387,15 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
             }
         }
 
+        if (showChat) {
+            val chat by vm.chat.collectAsState()
+            ChatDialog(
+                messages = chat,
+                onSend = { vm.sendChat(it) },
+                onDismiss = { showChat = false },
+            )
+        }
+
         if (showFreqDialog) {
             FreqEntryDialog(
                 currentMhz = if (tunedFreq > 0) "%.4f".format(tunedFreq / 1e6).replace(',', '.') else "",
@@ -497,6 +517,52 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
             }
         }
     }
+}
+
+@Composable
+private fun ChatDialog(
+    messages: List<pl.sp8mb.owrx.session.OwrxSession.Chat>,
+    onSend: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember { mutableStateOf("") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Czat (${messages.size})") },
+        text = {
+            Column {
+                LazyColumn(
+                    modifier = Modifier.height(260.dp).fillMaxWidth(),
+                    reverseLayout = true,
+                ) {
+                    items(messages.reversed()) { m ->
+                        Text(
+                            "${m.name}: ${m.text}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+                androidx.compose.material3.OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Wiadomość") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (text.isNotBlank()) {
+                        onSend(text)
+                        text = ""
+                    }
+                },
+            ) { Text("Wyślij") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Zamknij") } },
+    )
 }
 
 @Composable

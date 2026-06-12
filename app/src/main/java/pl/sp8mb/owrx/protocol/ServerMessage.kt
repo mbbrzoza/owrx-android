@@ -21,6 +21,8 @@ sealed class ServerMessage {
     data class Bands(val value: JsonElement) : ServerMessage()
     data class Metadata(val value: JsonObject) : ServerMessage()
     data class Backoff(val reason: String) : ServerMessage()
+    data class Clients(val count: Int) : ServerMessage()
+    data class ChatMessage(val name: String, val text: String, val color: String) : ServerMessage()
     data class LogMessage(val message: String) : ServerMessage()
     data class SdrError(val message: String) : ServerMessage()
     data class DemodulatorError(val message: String) : ServerMessage()
