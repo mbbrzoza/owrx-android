@@ -79,6 +79,23 @@ class OwrxSession @Inject constructor(
     private val _desired = MutableStateFlow(DesiredState())
     val desired: StateFlow<DesiredState> = _desired.asStateFlow()
 
+    data class ModeInfo(
+        val modulation: String,
+        val name: String,
+        val lowCut: Int?,
+        val highCut: Int?,
+        val analog: Boolean,
+    )
+
+    private val _modes = MutableStateFlow<List<ModeInfo>>(emptyList())
+    val modes: StateFlow<List<ModeInfo>> = _modes.asStateFlow()
+
+    private val _bookmarks = MutableStateFlow<kotlinx.serialization.json.JsonElement?>(null)
+    val bookmarks: StateFlow<kotlinx.serialization.json.JsonElement?> = _bookmarks.asStateFlow()
+
+    private val _dialFrequencies = MutableStateFlow<kotlinx.serialization.json.JsonElement?>(null)
+    val dialFrequencies: StateFlow<kotlinx.serialization.json.JsonElement?> = _dialFrequencies.asStateFlow()
+
     private val fftDecoder = FftFrameDecoder()
     private val audioDecoder = AudioStreamDecoder()
     private val hdAudioDecoder = AudioStreamDecoder()
@@ -98,11 +115,15 @@ class OwrxSession @Inject constructor(
     /** Wall-clock ms of the last frame from the server; watchdog uses it. */
     private val lastRxAt = AtomicLong(0)
 
-    fun connect(url: String) {
+    private var basicAuth: String? = null
+
+    fun connect(url: String, username: String? = null, password: String? = null) {
         shouldRun = true
         currentUrl = url
+        basicAuth = if (!username.isNullOrEmpty()) okhttp3.Credentials.basic(username, password ?: "") else null
         reconnectAttempt = 0
         _backoff.value = null
+        _radioConfig.value = RadioConfig()
         openSocket(url)
         startWatchdog()
     }
@@ -157,7 +178,9 @@ class OwrxSession @Inject constructor(
     private fun openSocket(url: String) {
         handshaken = false
         _connectionState.value = ConnectionState.Connecting(url)
-        val request = Request.Builder().url(url).build()
+        val request = Request.Builder().url(url).apply {
+            basicAuth?.let { header("Authorization", it) }
+        }.build()
         webSocket = httpClient.newWebSocket(request, listener)
     }
 
@@ -229,8 +252,33 @@ class OwrxSession @Inject constructor(
             is ServerMessage.LogMessage -> _log.tryEmit(msg.message)
             is ServerMessage.SdrError -> _log.tryEmit("SDR error: ${msg.message}")
             is ServerMessage.DemodulatorError -> _log.tryEmit("Demod error: ${msg.message}")
-            else -> {} // bookmarks/bands/dial_frequencies handled in M2; rest ignored
+            is ServerMessage.Bookmarks -> _bookmarks.value = msg.value
+            is ServerMessage.DialFrequencies -> _dialFrequencies.value = msg.value
+            is ServerMessage.Modes -> _modes.value = parseModes(msg.value)
+            else -> {}
         }
+    }
+
+    private fun parseModes(value: kotlinx.serialization.json.JsonElement): List<ModeInfo> = try {
+        (value as kotlinx.serialization.json.JsonArray).mapNotNull { el ->
+            val o = el as? JsonObject ?: return@mapNotNull null
+            fun prim(key: String) = o[key] as? kotlinx.serialization.json.JsonPrimitive
+            val bandpass = o["bandpass"] as? JsonObject
+            ModeInfo(
+                modulation = prim("modulation")?.content ?: return@mapNotNull null,
+                name = prim("name")?.content ?: "",
+                lowCut = (bandpass?.get("low_cut") as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull()?.toInt(),
+                highCut = (bandpass?.get("high_cut") as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull()?.toInt(),
+                analog = prim("type")?.content == "analog",
+            )
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    /** Restore persisted user state (called before connect). */
+    fun restoreDesiredState(state: DesiredState) {
+        _desired.value = state
     }
 
     private fun replayDesiredState() {

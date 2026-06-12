@@ -4,6 +4,7 @@ package pl.sp8mb.owrx.session
  * What the user wants the receiver to do. Source of truth replayed to the
  * server after every (re)connect, so a dropped LTE link resumes seamlessly.
  */
+@kotlinx.serialization.Serializable
 data class DesiredState(
     val profileId: String? = null,
     val offsetFreq: Int? = null,
