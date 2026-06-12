@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- T letter for TetraLink -->
+    <path
+        android:fillColor="#FF3B82F6"
+        android:pathData="M34,30h40v8H58v40h-8V38H34z" />
+    <!-- Signal waves -->
+    <path
+        android:fillColor="#FF3B82F6"
+        android:pathData="M68,45 C72,42 72,55 68,52"
+        android:strokeWidth="2"
+        android:strokeColor="#FF3B82F6" />
+    <path
+        android:fillColor="#FF3B82F6"
+        android:pathData="M74,40 C80,36 80,60 74,56"
+        android:strokeWidth="2"
+        android:strokeColor="#FF3B82F6" />
+</vector>
