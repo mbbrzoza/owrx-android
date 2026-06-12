@@ -1,0 +1,282 @@
+package pl.sp8mb.owrx.session
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import okio.ByteString
+import pl.sp8mb.owrx.protocol.AudioStreamDecoder
+import pl.sp8mb.owrx.protocol.ClientCommand
+import pl.sp8mb.owrx.protocol.FftFrameDecoder
+import pl.sp8mb.owrx.protocol.MessageParser
+import pl.sp8mb.owrx.protocol.Profile
+import pl.sp8mb.owrx.protocol.ServerMessage
+import java.util.concurrent.atomic.AtomicLong
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class OwrxSession @Inject constructor(
+    private val httpClient: OkHttpClient,
+    private val audioPipeline: AudioPipeline,
+) {
+    sealed class ConnectionState {
+        data object Disconnected : ConnectionState()
+        data class Connecting(val url: String) : ConnectionState()
+        data class Connected(val url: String, val serverVersion: String) : ConnectionState()
+        data class Reconnecting(val url: String, val attempt: Int, val delayMs: Long) : ConnectionState()
+    }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
+    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
+    private val _radioConfig = MutableStateFlow(RadioConfig())
+    val radioConfig: StateFlow<RadioConfig> = _radioConfig.asStateFlow()
+
+    private val _profiles = MutableStateFlow<List<Profile>>(emptyList())
+    val profiles: StateFlow<List<Profile>> = _profiles.asStateFlow()
+
+    private val _smeter = MutableStateFlow(-150f)
+    val smeter: StateFlow<Float> = _smeter.asStateFlow()
+
+    private val _backoff = MutableStateFlow<String?>(null)
+    val backoff: StateFlow<String?> = _backoff.asStateFlow()
+
+    private val _fft = MutableSharedFlow<FloatArray>(
+        extraBufferCapacity = 4,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+    val fft: SharedFlow<FloatArray> = _fft.asSharedFlow()
+
+    private val _metadata = MutableSharedFlow<JsonObject>(
+        extraBufferCapacity = 256,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+    val metadata: SharedFlow<JsonObject> = _metadata.asSharedFlow()
+
+    private val _log = MutableSharedFlow<String>(
+        extraBufferCapacity = 64,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+    val log: SharedFlow<String> = _log.asSharedFlow()
+
+    private val _desired = MutableStateFlow(DesiredState())
+    val desired: StateFlow<DesiredState> = _desired.asStateFlow()
+
+    private val fftDecoder = FftFrameDecoder()
+    private val audioDecoder = AudioStreamDecoder()
+    private val hdAudioDecoder = AudioStreamDecoder()
+
+    private var webSocket: WebSocket? = null
+    private var shouldRun = false
+    private var currentUrl: String? = null
+    private var reconnectJob: Job? = null
+    private var reconnectAttempt = 0
+
+    @Volatile
+    private var handshaken = false
+
+    @Volatile
+    private var pendingReplay = false
+
+    /** Wall-clock ms of the last frame from the server; watchdog uses it. */
+    private val lastRxAt = AtomicLong(0)
+
+    fun connect(url: String) {
+        shouldRun = true
+        currentUrl = url
+        reconnectAttempt = 0
+        _backoff.value = null
+        openSocket(url)
+        startWatchdog()
+    }
+
+    fun disconnect() {
+        shouldRun = false
+        reconnectJob?.cancel()
+        webSocket?.close(1000, "bye")
+        webSocket = null
+        audioPipeline.stop()
+        _connectionState.value = ConnectionState.Disconnected
+    }
+
+    fun selectProfile(profileId: String) {
+        _desired.value = _desired.value.copy(profileId = profileId)
+        send(ClientCommand.selectProfile(profileId))
+    }
+
+    fun setDsp(
+        offsetFreq: Int? = null,
+        mod: String? = null,
+        squelchLevel: Float? = null,
+        lowCut: Int? = null,
+        highCut: Int? = null,
+    ) {
+        val d = _desired.value
+        _desired.value = d.copy(
+            offsetFreq = offsetFreq ?: d.offsetFreq,
+            mod = mod ?: d.mod,
+            squelchLevel = squelchLevel ?: d.squelchLevel,
+            lowCut = lowCut ?: d.lowCut,
+            highCut = highCut ?: d.highCut,
+        )
+        val params = buildMap<String, Any?> {
+            offsetFreq?.let { put("offset_freq", it) }
+            mod?.let { put("mod", it) }
+            squelchLevel?.let { put("squelch_level", it) }
+            lowCut?.let { put("low_cut", it) }
+            highCut?.let { put("high_cut", it) }
+        }
+        if (params.isNotEmpty()) send(ClientCommand.dspParams(params))
+    }
+
+    /** Kicks the reconnect loop immediately (e.g. on network-available callback). */
+    fun kickReconnect() {
+        if (shouldRun && _connectionState.value !is ConnectionState.Connected) {
+            reconnectJob?.cancel()
+            currentUrl?.let { openSocket(it) }
+        }
+    }
+
+    private fun openSocket(url: String) {
+        handshaken = false
+        _connectionState.value = ConnectionState.Connecting(url)
+        val request = Request.Builder().url(url).build()
+        webSocket = httpClient.newWebSocket(request, listener)
+    }
+
+    private val listener = object : WebSocketListener() {
+        override fun onOpen(webSocket: WebSocket, response: Response) {
+            lastRxAt.set(System.currentTimeMillis())
+            webSocket.send(ClientCommand.HANDSHAKE)
+        }
+
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            lastRxAt.set(System.currentTimeMillis())
+            if (!handshaken) {
+                if (text.startsWith("CLIENT DE SERVER")) {
+                    handshaken = true
+                    pendingReplay = true
+                    reconnectAttempt = 0
+                    val version = text.substringAfter("version=", "?")
+                    _connectionState.value = ConnectionState.Connected(currentUrl ?: "", version)
+                    webSocket.send(ClientCommand.connectionProperties())
+                    webSocket.send(ClientCommand.dspStart())
+                    audioPipeline.start()
+                }
+                return
+            }
+            handleMessage(text)
+        }
+
+        override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+            lastRxAt.set(System.currentTimeMillis())
+            if (bytes.size < 1) return
+            val payload = bytes.toByteArray()
+            when (payload[0].toInt()) {
+                1 -> _fft.tryEmit(fftDecoder.decode(payload.copyOfRange(1, payload.size)))
+                2 -> audioPipeline.submit(audioDecoder.decode(payload.copyOfRange(1, payload.size)), hd = false)
+                3 -> {} // secondary FFT — not used yet
+                4 -> audioPipeline.submit(hdAudioDecoder.decode(payload.copyOfRange(1, payload.size)), hd = true)
+            }
+        }
+
+        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            scheduleReconnect("closed: $code $reason")
+        }
+
+        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            scheduleReconnect("failure: ${t.message}")
+        }
+    }
+
+    private fun handleMessage(text: String) {
+        when (val msg = MessageParser.parse(text)) {
+            is ServerMessage.Config -> {
+                val merged = _radioConfig.value.merge(msg.value)
+                _radioConfig.value = merged
+                fftDecoder.compression = merged.fftCompression
+                audioDecoder.compression = merged.audioCompression
+                hdAudioDecoder.compression = merged.audioCompression
+                if (pendingReplay) {
+                    pendingReplay = false
+                    replayDesiredState()
+                }
+            }
+            is ServerMessage.Profiles -> _profiles.value = msg.profiles
+            is ServerMessage.SMeter -> _smeter.value = msg.level
+            is ServerMessage.Metadata -> _metadata.tryEmit(msg.value)
+            is ServerMessage.Backoff -> {
+                _backoff.value = msg.reason.ifEmpty { "server backoff" }
+                _log.tryEmit("BACKOFF: ${msg.reason}")
+            }
+            is ServerMessage.LogMessage -> _log.tryEmit(msg.message)
+            is ServerMessage.SdrError -> _log.tryEmit("SDR error: ${msg.message}")
+            is ServerMessage.DemodulatorError -> _log.tryEmit("Demod error: ${msg.message}")
+            else -> {} // bookmarks/bands/dial_frequencies handled in M2; rest ignored
+        }
+    }
+
+    private fun replayDesiredState() {
+        val d = _desired.value
+        val params = d.dspParams()
+        if (params.isNotEmpty()) send(ClientCommand.dspParams(params))
+        // profile replay deliberately omitted: the server restores the last
+        // profile by itself and forcing it would fight other listeners
+    }
+
+    private fun send(text: String) {
+        webSocket?.send(text)
+    }
+
+    private fun scheduleReconnect(reason: String) {
+        audioDecoder.reset()
+        hdAudioDecoder.reset()
+        if (!shouldRun) {
+            _connectionState.value = ConnectionState.Disconnected
+            return
+        }
+        val url = currentUrl ?: return
+        reconnectAttempt++
+        val delayMs = (1000L shl (reconnectAttempt - 1).coerceAtMost(5)).coerceAtMost(30_000L)
+        _connectionState.value = ConnectionState.Reconnecting(url, reconnectAttempt, delayMs)
+        _log.tryEmit("Reconnect #$reconnectAttempt in ${delayMs}ms ($reason)")
+        reconnectJob?.cancel()
+        reconnectJob = scope.launch {
+            delay(delayMs)
+            if (shouldRun) openSocket(url)
+        }
+    }
+
+    private var watchdogJob: Job? = null
+
+    private fun startWatchdog() {
+        watchdogJob?.cancel()
+        watchdogJob = scope.launch {
+            while (shouldRun) {
+                delay(10_000)
+                val silentMs = System.currentTimeMillis() - lastRxAt.get()
+                if (_connectionState.value is ConnectionState.Connected && silentMs > 30_000) {
+                    _log.tryEmit("Watchdog: ${silentMs / 1000}s silence, forcing reconnect")
+                    webSocket?.cancel()
+                }
+            }
+        }
+    }
+}

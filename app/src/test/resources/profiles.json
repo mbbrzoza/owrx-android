@@ -1,0 +1,169 @@
+{
+  "type": "profiles",
+  "value": [
+    {
+      "id": "rtlsdr|70cm",
+      "name": "RTL0 70cm Repeaters"
+    },
+    {
+      "id": "rtlsdr|a3c516fb-9606-4db8-8069-b23510a3a715",
+      "name": "RTL0 437 MHz"
+    },
+    {
+      "id": "rtlsdr|acf268c5-5259-4369-b6a9-907c2e2126ac",
+      "name": "RTL0 433 MHz"
+    },
+    {
+      "id": "rtlsdr|5bb3f3d4-eaf0-4fd2-892c-c2ff9cda341d",
+      "name": "RTL0 446 MHz PMR"
+    },
+    {
+      "id": "rtlsdr|55ef238f-cc7f-4798-bc83-790943b34ee2",
+      "name": "RTL0 70cm Repeater Input"
+    },
+    {
+      "id": "rtlsdr|2m",
+      "name": "RTL0 145 MHz - 2m"
+    },
+    {
+      "id": "rtlsdr|0825c305-a394-46d3-abda-cddc6e8a0b93",
+      "name": "RTL0 Radiofonia"
+    },
+    {
+      "id": "rtlsdr|d21a17a2-0ba9-4f93-836c-e22c404cacfc",
+      "name": "RTL0 Meteo SAT"
+    },
+    {
+      "id": "rtlsdr|c961955b-014a-4175-b931-39d70905dc1b",
+      "name": "RTL0 AirBand EPLB"
+    },
+    {
+      "id": "rtlsdr|3e3186ce-1bac-472e-9054-5424dad8d2b6",
+      "name": "RTL0 AirBand FIS Warszawa"
+    },
+    {
+      "id": "rtlsdr|64911719-94d1-4c87-b6a5-acd296d8ae91",
+      "name": "RTL0 Airband EPSW INF"
+    },
+    {
+      "id": "rtlsdr|bd6c7735-f1f2-4843-82db-bb2efdd8b832",
+      "name": "RTL0 Airband EPSW"
+    },
+    {
+      "id": "rtlsdr|bbb609a8-9b8a-4a1f-b6ca-909caf4b9793",
+      "name": "RTL0 TETRA EPLB"
+    },
+    {
+      "id": "rtlsdr|4d82e860-80d1-4220-bc8b-7ee2f8856532",
+      "name": "RTL0 168 MHz Pogotowie"
+    },
+    {
+      "id": "rtlsdr|bb487e7c-a99a-4782-b07d-d17517f45071",
+      "name": "RTL0 163 MHz Pogotowie"
+    },
+    {
+      "id": "rtlsdr|c3f61c74-55a4-4167-9306-c0fad8daf930",
+      "name": "RTL0 173 MHz MSW"
+    },
+    {
+      "id": "rtlsdr|3898b37f-2ab0-43de-91d2-6cc80d3f04bb",
+      "name": "RTL0 148 MHz PSP"
+    },
+    {
+      "id": "rtlsdr|31a3bfc3-f2b1-4bc2-809b-3af629093bb0",
+      "name": "RTL0 218 MHz DAB"
+    },
+    {
+      "id": "rtlsdr|09771ddb-5ac7-4448-8fbd-68f2969064d7",
+      "name": "RTL0 215 MHz DAB Kielce"
+    },
+    {
+      "id": "rtlsdr|6824ad2d-57e1-4bd1-90b2-653918116b51",
+      "name": "RTL0 258 MHz SatCom"
+    },
+    {
+      "id": "rtlsdr|5052c0f0-2f07-4fe7-9ccd-23dc59e1aa34",
+      "name": "RTL0 ADSB"
+    },
+    {
+      "id": "rtlsdr|9ab706de-5c00-4f42-9d2e-4efd50095add",
+      "name": "RTL0 150 MHz PKP"
+    },
+    {
+      "id": "rtlsdr|b9814dbb-d85d-44f2-834d-f11c39c4c655",
+      "name": "RTL0 152 MHz SM Lublin"
+    },
+    {
+      "id": "rtlsdr|e83fe3f6-f45e-40aa-b065-1c97df107403",
+      "name": "RTL0 TETRA1"
+    },
+    {
+      "id": "rtlsdr|cde6fc9c-e2e5-4830-b93d-bca5440b5374",
+      "name": "RTL0 TETRA2"
+    },
+    {
+      "id": "rtlsdr|079769ff-6492-4e34-84c8-88a1d2ecaf08",
+      "name": "RTL0 868 MHz"
+    },
+    {
+      "id": "rtlsdr|32920fed-b758-413b-a47b-ff228b6be20d",
+      "name": "RTL0 27MHz CB"
+    },
+    {
+      "id": "rtlsdr|e6523e37-4cca-4151-9fea-24af505d81fe",
+      "name": "RTL0 TETRA SR8LST"
+    },
+    {
+      "id": "f485046b-4fcc-431f-a2ea-49798498dba3|bbdc471f-bfa8-4033-a6a9-4d2feb34c0c6",
+      "name": "MRC1 1.8 MHz - 160m"
+    },
+    {
+      "id": "f485046b-4fcc-431f-a2ea-49798498dba3|6f9eec5f-21d4-4ed6-8e31-e13a9f8a7601",
+      "name": "MRC1 3.5 MHz - 80m"
+    },
+    {
+      "id": "f485046b-4fcc-431f-a2ea-49798498dba3|8d97da19-d0b4-4f39-9777-3efe6949ae7c",
+      "name": "MRC1 5 MHz - 60m"
+    },
+    {
+      "id": "f485046b-4fcc-431f-a2ea-49798498dba3|b3101af7-df53-4ee0-96d6-c906e39057dd",
+      "name": "MRC1 7 MHz - 40m"
+    },
+    {
+      "id": "f485046b-4fcc-431f-a2ea-49798498dba3|ed26c84c-da2b-468e-b69a-28490b78c0a1",
+      "name": "MRC1 8.8MHz - 9MHz"
+    },
+    {
+      "id": "f485046b-4fcc-431f-a2ea-49798498dba3|a91135cc-4a81-4455-9682-88ac4ecaf62b",
+      "name": "MRC1 10 MHz - 30m"
+    },
+    {
+      "id": "f485046b-4fcc-431f-a2ea-49798498dba3|de820ec4-b300-423b-8532-84514c1447e4",
+      "name": "MRC1 11.1MHz - 11.4MHz"
+    },
+    {
+      "id": "f485046b-4fcc-431f-a2ea-49798498dba3|2c2b4ecc-81ac-40bf-920d-a066ddffd484",
+      "name": "MRC1 14 MHz - 20m"
+    },
+    {
+      "id": "f485046b-4fcc-431f-a2ea-49798498dba3|6fbfd875-3d88-47c1-b6d7-9db1a656fb63",
+      "name": "MRC1 18 MHz - 17m"
+    },
+    {
+      "id": "f485046b-4fcc-431f-a2ea-49798498dba3|17abdde0-feee-4dcd-9ba8-a46ad0d63254",
+      "name": "MRC1 21 MHz - 15m"
+    },
+    {
+      "id": "f485046b-4fcc-431f-a2ea-49798498dba3|7a683ad7-8ac2-4851-9055-e7489e54d0f8",
+      "name": "MRC1 24 MHz - 12m"
+    },
+    {
+      "id": "f485046b-4fcc-431f-a2ea-49798498dba3|312fc51e-5ceb-4877-9b8e-cc15b3d0ff89",
+      "name": "MRC1 28 MHz - 10m"
+    },
+    {
+      "id": "f485046b-4fcc-431f-a2ea-49798498dba3|9578d072-c3be-4161-81aa-0ed8f7cca791",
+      "name": "MRC1 50 MHz - 6m"
+    }
+  ]
+}

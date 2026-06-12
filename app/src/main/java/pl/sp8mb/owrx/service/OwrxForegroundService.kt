@@ -5,22 +5,34 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import pl.sp8mb.owrx.OwrxApp
 import pl.sp8mb.owrx.R
+import pl.sp8mb.owrx.session.OwrxSession
 import pl.sp8mb.owrx.ui.MainActivity
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class OwrxForegroundService : LifecycleService() {
 
+    @Inject
+    lateinit var session: OwrxSession
+
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
@@ -42,6 +54,52 @@ class OwrxForegroundService : LifecycleService() {
             startForeground(NOTIFICATION_ID, notification)
         }
         acquireLocks()
+        registerNetworkCallback()
+        observeSession()
+    }
+
+    private fun observeSession() {
+        lifecycleScope.launch {
+            session.connectionState.collect { state ->
+                val text = when (state) {
+                    is OwrxSession.ConnectionState.Disconnected -> getString(R.string.notification_disconnected)
+                    is OwrxSession.ConnectionState.Connecting -> "Łączenie…"
+                    is OwrxSession.ConnectionState.Connected -> describeTuning()
+                    is OwrxSession.ConnectionState.Reconnecting -> "Ponawianie połączenia (#${state.attempt})"
+                }
+                updateNotification(text)
+            }
+        }
+    }
+
+    private fun describeTuning(): String {
+        val cfg = session.radioConfig.value
+        val desired = session.desired.value
+        val center = cfg.centerFreq
+        val offset = desired.offsetFreq ?: cfg.startOffsetFreq
+        val mod = desired.mod ?: cfg.startMod
+        return if (center != null && offset != null) {
+            "%.4f MHz %s".format((center + offset) / 1e6, (mod ?: "").uppercase())
+        } else {
+            "Połączony"
+        }
+    }
+
+    private fun registerNetworkCallback() {
+        if (networkCallback != null) return
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                session.kickReconnect()
+            }
+        }.also {
+            cm.registerNetworkCallback(
+                NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build(),
+                it
+            )
+        }
     }
 
     fun updateNotification(text: String) {
@@ -86,6 +144,10 @@ class OwrxForegroundService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        networkCallback?.let {
+            (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(it)
+        }
+        networkCallback = null
         wifiLock?.takeIf { it.isHeld }?.release()
         wakeLock?.takeIf { it.isHeld }?.release()
         wifiLock = null
