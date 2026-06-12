@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material3.Icon
@@ -101,6 +102,7 @@ private fun OwrxApp() {
         NavTab("receiver", "Odbiornik") { Icon(Icons.Default.Radio, null) },
         NavTab("scanner", "Skaner") { Icon(Icons.Default.Radar, null) },
         NavTab("tetra", "TETRA") { Icon(Icons.Default.GraphicEq, null) },
+        NavTab("map", "Mapa") { Icon(Icons.Default.Map, null) },
     )
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
@@ -157,6 +159,7 @@ private fun OwrxApp() {
             composable("receiver") { ReceiverScreen() }
             composable("scanner") { ScannerScreen() }
             composable("tetra") { TetraScreen() }
+            composable("map") { pl.sp8mb.owrx.ui.screens.MapScreen() }
             composable(
                 "admin/{serverId}",
                 arguments = listOf(navArgument("serverId") { type = NavType.LongType }),

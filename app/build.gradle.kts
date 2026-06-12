@@ -89,6 +89,7 @@ dependencies {
     implementation(libs.hilt.navigation.compose)
     implementation(libs.okhttp)
     implementation(libs.jsoup)
+    implementation(libs.osmdroid)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
 
