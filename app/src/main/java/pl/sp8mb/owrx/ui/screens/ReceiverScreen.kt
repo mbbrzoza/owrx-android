@@ -76,13 +76,18 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
         val view = waterfall ?: return@LaunchedEffect
         vm.fft.collect { view.addFrame(it) }
     }
-    LaunchedEffect(config.centerFreq, config.sampRate, tunedFreq, desired, bookmarks, waterfall) {
+    LaunchedEffect(config.centerFreq, config.sampRate, tunedFreq, desired, bookmarks, favorites, waterfall) {
         waterfall?.let { v ->
             v.centerFreq = config.centerFreq ?: 0
             v.sampRate = config.sampRate ?: 0
             v.passbandLow = desired.lowCut ?: -6000
             v.passbandHigh = desired.highCut ?: 6000
-            v.tags = bookmarks.map { WaterfallView.Tag(it.frequency, it.name, it.modulation) }
+            // server bookmarks merged with our favorites (server wins on same freq),
+            // so bands without server-side bookmarks still show everything we know
+            v.tags = (
+                bookmarks.map { WaterfallView.Tag(it.frequency, it.name, it.modulation) } +
+                    favorites.map { WaterfallView.Tag(it.freqHz, it.name, it.modulation) }
+                ).distinctBy { it.freq }
             v.tunedFreq = tunedFreq
         }
     }
