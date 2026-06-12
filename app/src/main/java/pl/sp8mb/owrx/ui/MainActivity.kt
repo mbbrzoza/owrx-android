@@ -1,8 +1,13 @@
 package pl.sp8mb.owrx.ui
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,9 +48,28 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+        requestDozeExemption()
         setContent {
             OwrxTheme {
                 OwrxApp()
+            }
+        }
+    }
+
+    /** Background audio over LTE dies in Doze on some OEMs — ask once for the exemption. */
+    @SuppressLint("BatteryLife")
+    private fun requestDozeExemption() {
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+            try {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            } catch (e: Exception) {
+                // some ROMs block the dialog; the app still works, just less reliably in Doze
             }
         }
     }

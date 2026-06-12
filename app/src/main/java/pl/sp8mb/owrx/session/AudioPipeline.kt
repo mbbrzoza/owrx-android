@@ -1,9 +1,13 @@
 package pl.sp8mb.owrx.session
 
+import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.os.Build
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ArrayBlockingQueue
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -13,7 +17,15 @@ import javax.inject.Singleton
  * Standard stream is 12 kHz mono; HD frames switch the track to 48 kHz.
  */
 @Singleton
-class AudioPipeline @Inject constructor() {
+class AudioPipeline @Inject constructor(
+    @ApplicationContext private val context: Context?,
+) {
+    private var focusRequest: AudioFocusRequest? = null
+
+    private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        muted = change == AudioManager.AUDIOFOCUS_LOSS ||
+            change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
+    }
 
     private data class Chunk(val pcm: ShortArray, val sampleRate: Int)
 
@@ -29,6 +41,7 @@ class AudioPipeline @Inject constructor() {
     fun start() {
         if (running) return
         running = true
+        requestFocus()
         thread = Thread(::writerLoop, "owrx-audio").apply {
             priority = Thread.MAX_PRIORITY - 1
             start()
@@ -37,9 +50,40 @@ class AudioPipeline @Inject constructor() {
 
     fun stop() {
         running = false
+        abandonFocus()
         thread?.interrupt()
         thread = null
         queue.clear()
+    }
+
+    private fun requestFocus() {
+        val am = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setOnAudioFocusChangeListener(focusListener)
+                .build()
+                .also { am.requestAudioFocus(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            am.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
+        }
+    }
+
+    private fun abandonFocus() {
+        val am = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequest?.let { am.abandonAudioFocusRequest(it) }
+            focusRequest = null
+        } else {
+            @Suppress("DEPRECATION")
+            am.abandonAudioFocus(focusListener)
+        }
     }
 
     fun submit(pcm: ShortArray, hd: Boolean) {
