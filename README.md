@@ -1,34 +1,104 @@
 # OWRX Mobile
 
-Natywny klient Android dla OpenWebRX+ (fork luarvique, v1.2.x). By SP8MB.
+Natywny klient Android dla [OpenWebRX+](https://github.com/luarvique/openwebrx)
+(fork luarvique, v1.2.x). Autor: **SP8MB**.
 
 Aplikacja do słuchania własnych odbiorników OpenWebRX w terenie — z audio
-działającym w tle (foreground service), skanerem pasm i panelem TETRA Monitor.
+działającym **w tle** (foreground service), skanerem pasm, monitorem TETRA i mapą
+APRS. Powstała, bo przeglądarka na Androidzie nie nadaje się do terenu: audio pada
+przy zgaszonym ekranie, a zerwanie LTE wymaga ręcznego odświeżania.
+
+> Interfejs jest po polsku. Aplikacja łączy się z **Twoimi** serwerami OpenWebRX+
+> (obsługuje basic auth nginx). To czysty klient — nie zawiera ani nie obchodzi
+> żadnego szyfrowania.
 
 ## Funkcje
-- **Audio w tle**: foreground service + MediaSession, wake/wifi lock, watchdog,
-  automatyczny reconnect z wykładniczym backoffem i wznowieniem ostatniego stanu
-  (częstotliwość/tryb/squelch) po zerwaniu LTE.
-- **Odbiornik**: wodospad + widmo (pinch-zoom, tap-to-tune), tryby AM/NFM/SSB/CW,
-  squelch, S-meter, profile serwera, zakładki (bookmarki + dial frequencies).
-- **Skaner**: detekcja nośnych z danych FFT (próg nad medianą szumu, raster
-  8.33/12.5/25 kHz), stany SCANNING→LOCKED→HANG, cooldown, blacklista,
-  historia trafień (Room). Tryb wieloprofilowy z twardym limitem ≥10 s/profil
-  (ochrona przed banem serwera — robotScore). Komunikat `backoff` zatrzymuje skaner.
-- **TETRA Monitor**: port webowego panelu — sieć (MCC/MNC/LA, czas ETSI,
-  szyfrowanie), szczeliny, sąsiedzi, log aktywności, aktywne SSI w 3 kategoriach
-  (🟢 Real / 🔵 Adres / 🔒 ESI), rejestracje MS, SDS, aktywność szyfrowana.
-- **Serwery**: lista z basic auth (np. nginx przed publicznym OWRX).
+
+### Odbiornik
+- **Wodospad + widmo** z podziałką częstotliwości w stylu OpenWebRX: pinch-zoom,
+  przesuwanie, tap = strojenie. Tagi zakładek nad skalą (w dwóch rzędach, gdy
+  gęsto), auto-poziomy kolorów z percentyli.
+- **Cyfrowy odczyt częstotliwości** — tap otwiera wpisanie MHz; jeśli częstotliwość
+  jest poza bieżącym pasmem, aplikacja sama przeskakuje do profilu, który ją
+  pokrywa (z wyuczonych zakresów), albo przesuwa środek SDR (`setfrequency`,
+  jeśli serwer pozwala + magic key).
+- **Jeden pasek narzędzi**: wyciszenie + głośność programowa (long-press),
+  squelch z trybem Auto, AGC / ręczny gain urządzenia, redukcja szumów (NR),
+  nagrywanie, paleta wodospadu.
+- **Tryby** AM/NFM/SSB/CW i inne z listy serwera; **digimody** (POCSAG/APRS/SSTV…)
+  przez secondary demod z logiem zdekodowanych wiadomości.
+- **Kto nadaje** — pasek z metadanymi cyfrowego głosu (DMR/YSF/D-STAR/NXDN).
+- **Profile** (wysuwany panel z lewej) i **Ulubione** (z prawej) — zakładki uczą
+  się automatycznie z odwiedzanych profili, można je dodawać ręcznie z bieżącej
+  częstotliwości oraz eksportować/importować do JSON. Ulubiona z innego pasma
+  sama przełącza profil.
+- **Licznik słuchaczy + czat** OWRX.
+
+### Audio w tle
+- Foreground service + MediaSession, wake/wifi lock.
+- **Watchdog** (30 s ciszy) + automatyczny reconnect z wykładniczym backoffem;
+  po zerwaniu LTE wznawia ostatni stan (częstotliwość/tryb/squelch).
+- Dekodery IMA ADPCM (audio + FFT) to port 1:1 z `htdocs/lib/AudioEngine.js`.
+
+### Nagrywanie
+- Do plików **.m4a (AAC)** w `Android/data/pl.sp8mb.owrx/files/Music/`.
+- Tryb **VOX** — automatyczne nagrywanie każdej transmisji (start przy otwarciu
+  squelcha, koniec po ciszy). Idealne ze skanerem.
+
+### Skaner
+- Trzy tryby: **całe pasmo**, **zakres** (od–do w MHz), **zakładki** (skan
+  pamięciowy — nasłuch tylko na wybranych zakładkach, z trybem zapisanym w zakładce).
+- Detekcja nośnych z danych FFT, próg ręczny lub **Auto** (liczony z rozrzutu
+  szumu każdej ramki), raster 8.33 / 12.5 / 25 kHz.
+- Maszyna stanów SCANNING → LOCKED → HANG, cooldown per częstotliwość, blacklista,
+  historia trafień (Room), **beep + wibracja** przy złapaniu.
+- Tryb wieloprofilowy z twardym limitem **≥ 10 s/profil** (ochrona przed banem
+  serwera — robotScore). Komunikat `backoff` natychmiast zatrzymuje skaner.
+
+### TETRA Monitor
+Port webowego panelu: sieć (MCC/MNC/LA, czas ETSI, szyfrowanie), szczeliny,
+sąsiedzi, log aktywności, aktywne SSI w 3 kategoriach (🟢 Real / 🔵 Adres / 🔒 ESI),
+rejestracje MS, SDS, aktywność szyfrowana, zakładka DMO.
+
+### Mapa
+Drugie połączenie WebSocket (`type=map`), pozycje APRS/AIS/HFDL na mapie OSM
+(OSMDroid), marker per stacja, TTL 30 min.
+
+### Admin SDR
+Zarządzanie serwerem przez panel `/settings` (wymaga danych admina OWRX):
+lista urządzeń, gain urządzenia (AGC/ręczny), tworzenie nowych profili.
 
 ## Budowanie
+
+```bash
+./gradlew :app:assembleDebug      # debug APK
+./gradlew :app:assembleRelease    # podpisany release (wymaga keystore.properties)
+./gradlew :app:testDebugUnitTest  # testy JVM (dekodery + skaner + TETRA)
 ```
-./gradlew :app:assembleDebug          # debug APK
-./gradlew :app:assembleRelease        # release (wymaga keystore.properties)
-./gradlew :app:testDebugUnitTest      # testy JVM (fixture'y z żywego serwera)
+
+APK trafia do `app/build/outputs/apk/`. Podpisywanie release wymaga pliku
+`keystore.properties` (poza repo) wskazującego na keystore — patrz `app/build.gradle.kts`.
+
+Fixture'y protokołu do testów można odświeżyć z żywego serwera:
+```bash
+python3 tools/capture_fixtures.py ws://HOST:8073/ws/ 15
 ```
-Fixture'y protokołu można odświeżyć: `python3 tools/capture_fixtures.py ws://HOST:8073/ws/ 15`
+
+**Wymagania:** Android 8.0+ (minSdk 26), JDK 17, Android SDK 35.
 
 ## Architektura
-`OwrxSession` (singleton) trzyma WebSocket + dekodery + stan; UI tylko obserwuje
-StateFlow. Dekodery ADPCM to port 1:1 z `htdocs/lib/AudioEngine.js` OpenWebRX+.
-Ramki binarne: `[0]=1` FFT, `2` audio, `4` HD audio. Szczegóły: `protocol/`.
+
+- **`protocol/`** — czysty Kotlin, bez zależności od Androida, testowalny na JVM:
+  parser wiadomości, dekodery ADPCM (audio + FFT), budowniczy komend.
+- **`OwrxSession`** (Hilt singleton) — trzyma WebSocket, dekodery i stan; cała
+  reszta (ViewModele, serwis) obserwuje `StateFlow`, więc UI może się odłączać
+  i podłączać, a audio leci dalej.
+- Ramki binarne WebSocket: pierwszy bajt = typ (`1` FFT, `2` audio, `4` HD audio).
+- Protokół zweryfikowany empirycznie wobec źródeł luarvique/openwebrx oraz
+  przechwyconego ruchu (m.in.: serwer nie odpowiada na pingi klienta → brak
+  pingInterval; S-meter jest liniowy → konwersja `10·log10`).
+
+## Licencja
+
+Kod własny SP8MB. OpenWebRX+ jest projektem osobnym (GAGPLv3) — ta aplikacja to
+niezależny klient komunikujący się z nim po sieci.
