@@ -22,18 +22,29 @@ data class ServerEntity(
     /** magic key for center-frequency changes (server's magic_key setting) */
     val magicKey: String? = null,
 ) {
-    fun wsUrl(): String = when {
-        address.startsWith("ws://") || address.startsWith("wss://") -> address
-        address.contains(":") -> "ws://$address/ws/"
-        else -> "wss://$address/ws/"
+    fun wsUrl(): String {
+        val a = address.trim()
+        return when {
+            a.startsWith("ws://") || a.startsWith("wss://") -> a
+            a.startsWith("https://") -> "wss://" + a.removePrefix("https://").removeSuffix("/") + "/ws/"
+            a.startsWith("http://") -> "ws://" + a.removePrefix("http://").removeSuffix("/") + "/ws/"
+            a.endsWith(":443") -> "wss://$a/ws/"            // jawny port HTTPS -> TLS
+            a.contains(":") -> "ws://$a/ws/"                // host:port (lokalny OWRX) -> cleartext
+            else -> "wss://$a/ws/"                          // sama domena -> TLS (np. sdr.inter1.pl)
+        }
     }
 
     /** Base http(s) URL of the same server. */
-    fun httpUrl(): String = when {
-        address.startsWith("ws://") -> "http://" + address.removePrefix("ws://").removeSuffix("/ws/").removeSuffix("/")
-        address.startsWith("wss://") -> "https://" + address.removePrefix("wss://").removeSuffix("/ws/").removeSuffix("/")
-        address.contains(":") -> "http://$address"
-        else -> "https://$address"
+    fun httpUrl(): String {
+        val a = address.trim()
+        return when {
+            a.startsWith("ws://") -> "http://" + a.removePrefix("ws://").removeSuffix("/ws/").removeSuffix("/")
+            a.startsWith("wss://") -> "https://" + a.removePrefix("wss://").removeSuffix("/ws/").removeSuffix("/")
+            a.startsWith("http://") || a.startsWith("https://") -> a.removeSuffix("/")
+            a.endsWith(":443") -> "https://$a"
+            a.contains(":") -> "http://$a"
+            else -> "https://$a"
+        }
     }
 }
 
