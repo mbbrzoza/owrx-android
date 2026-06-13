@@ -1,6 +1,7 @@
 package pl.sp8mb.owrx.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.TextButton
@@ -24,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -203,15 +205,36 @@ private fun LogList(entries: List<LogEntry>) {
 
 @Composable
 private fun SsiList(ssis: List<pl.sp8mb.owrx.tetra.ActiveSsi>, networkEncrypted: Boolean) {
-    val visible = ssis.filter {
-        when (it.category) {
+    // Domyślnie ukrywamy aliasy ESI (i adresy w sieci szyfrowanej) — jak panel web.
+    // W sieciach typu 260-10 (TEA) wszystkie SSI to aliasy ESI, więc bez tego lista
+    // bywała pusta mimo licznika w nagłówku. Stopka pokazuje ile ukryto + pozwala odsłonić.
+    var showHidden by remember { mutableStateOf(false) }
+    val isVisible = { s: pl.sp8mb.owrx.tetra.ActiveSsi ->
+        when (s.category) {
             SsiCategory.REAL -> true
             SsiCategory.ADDR -> !networkEncrypted
             SsiCategory.ESI -> false
         }
-    }.sortedBy { it.ageSec }
+    }
+    val hiddenCount = ssis.count { !isVisible(it) }
+    val shown = (if (showHidden) ssis else ssis.filter(isVisible)).sortedBy { it.ageSec }
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
-        items(visible, key = { it.ssi }) { s ->
+        if (hiddenCount > 0) {
+            item {
+                Text(
+                    "🔒 $hiddenCount ukryte (aliasy ESI / sieć szyfrowana) — " +
+                        if (showHidden) "ukryj" else "pokaż",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF64B5F6),
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showHidden = !showHidden }
+                        .padding(vertical = 6.dp),
+                )
+            }
+        }
+        items(shown, key = { it.ssi }) { s ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
                     "${TetraRepository.CATEGORY_LABEL[s.category]}  ${s.ssi}",
