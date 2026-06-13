@@ -25,8 +25,11 @@ przy zgaszonym ekranie, a zerwanie LTE wymaga ręcznego odświeżania.
 - **Jeden pasek narzędzi**: wyciszenie + głośność programowa (long-press),
   squelch z trybem Auto, AGC / ręczny gain urządzenia, redukcja szumów (NR),
   nagrywanie, paleta wodospadu.
-- **Tryby** AM/NFM/SSB/CW i inne z listy serwera; **digimody** (POCSAG/APRS/SSTV…)
-  przez secondary demod z logiem zdekodowanych wiadomości.
+- **Tryby** AM/NFM/SSB/CW i inne z listy serwera. **Digimody** (Packet/APRS/POCSAG/
+  FT8/SSTV…) — wybór z pickera, kliknięcie zakładki na wodospadzie lub ulubionej
+  automatycznie przełącza nośnik analogowy (np. Packet→`empty`, FT8→`usb`) i włącza
+  dekoder wtórny (`mod` + `secondary_mod` w jednej komendzie, jak web-klient); panel
+  zdekodowanych wiadomości pokazuje się sam.
 - **Kto nadaje** — pasek z metadanymi cyfrowego głosu (DMR/YSF/D-STAR/NXDN).
 - **Profile** (wysuwany panel z lewej) i **Ulubione** (z prawej) — zakładki uczą
   się automatycznie z odwiedzanych profili, można je dodawać ręcznie z bieżącej
@@ -39,6 +42,9 @@ przy zgaszonym ekranie, a zerwanie LTE wymaga ręcznego odświeżania.
 - **Watchdog** (30 s ciszy) + automatyczny reconnect z wykładniczym backoffem;
   po zerwaniu LTE wznawia ostatni stan (częstotliwość/tryb/squelch).
 - Dekodery IMA ADPCM (audio + FFT) to port 1:1 z `htdocs/lib/AudioEngine.js`.
+- **Zamknij aplikację** — przycisk pełnego zamknięcia (rozłącza sesję, zatrzymuje
+  serwis i pracę w tle, zwalnia wakelock, usuwa z ostatnich). Akcja Stop w
+  powiadomieniu też w pełni rozłącza.
 
 ### Nagrywanie
 - Do plików **.m4a (AAC)** w `Android/data/pl.sp8mb.owrx/files/Music/`.
@@ -58,11 +64,21 @@ przy zgaszonym ekranie, a zerwanie LTE wymaga ręcznego odświeżania.
 ### TETRA Monitor
 Port webowego panelu: sieć (MCC/MNC/LA, czas ETSI, szyfrowanie), szczeliny,
 sąsiedzi, log aktywności, aktywne SSI w 3 kategoriach (🟢 Real / 🔵 Adres / 🔒 ESI),
-rejestracje MS, SDS, aktywność szyfrowana, zakładka DMO.
+rejestracje MS, SDS, aktywność szyfrowana, zakładka DMO. W sieciach szyfrowanych
+(same aliasy ESI) lista SSI pokazuje stopkę „N ukryte — pokaż" do odsłonięcia.
 
 ### Mapa
-Drugie połączenie WebSocket (`type=map`), pozycje APRS/AIS/HFDL na mapie OSM
-(OSMDroid), marker per stacja, TTL 30 min.
+Mapa OSM (OSMDroid) z dwóch źródeł: drugie połączenie WebSocket (`type=map`,
+agregat serwera) **oraz lokalnie zdekodowane ramki** (APRS/AIS… wyłuskane z
+`secondary_demod` — co sam dekodujesz, ląduje na mapie).
+- **Prawdziwe ikony APRS** (sprite symboli, wycinane po `index`/`tableindex` jak
+  web) per stacja; **samoloty** obrócone wg kursu dla trybów lotniczych
+  (ADSB/VDL2/HFDL); marker odbiornika z auto-centrowaniem.
+- **Klastrowanie** gęstych warstw stałych z licznikiem (tap = zoom); **zdekodowane
+  stacje zawsze pojedynczo** (widać symbol każdej); lokalne dekody wyróżnione.
+- **Przełączniki warstw** — sieć innych odbiorników (KiwiSDR/OpenWebRX/WebSDR) i
+  bazy (stacje/repeatery) domyślnie **ukryte**, żeby nie zaciemniać mapy.
+- Tap markera = info (znak, tryb, wiek, komentarz). TTL 1 h.
 
 ### Admin SDR
 Zarządzanie serwerem przez panel `/settings` (wymaga danych admina OWRX):
