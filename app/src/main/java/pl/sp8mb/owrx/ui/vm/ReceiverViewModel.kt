@@ -78,7 +78,24 @@ class ReceiverViewModel @Inject constructor(
     val secondaryMod = session.secondaryMod
     val digiMessages = session.digiMessages
 
-    fun setDigimode(mod: String?) = session.setSecondaryMod(mod)
+    fun setDigimode(mod: String?) {
+        if (mod == null) {
+            session.setSecondaryMod(null)
+            return
+        }
+        val info = session.modes.value.firstOrNull { it.modulation == mod }
+        val underlying = info?.underlying ?: emptyList()
+        // Digimody (packet/ais/ft8/...) to dekodery WTÓRNE na nośniku analogowym
+        // (packet→"empty", ft8→"usb", selcall→"nfm"). Wybór nośnika jak web-klient:
+        // zachowaj bieżący jeśli pasuje, inaczej domyślny underlying[0].
+        val carrier = when {
+            underlying.isEmpty() -> currentMod.value
+            currentMod.value in underlying -> currentMod.value
+            else -> underlying.first()
+        }
+        // mod + secondary_mod w JEDNEJ wiadomości (osobno = dekoder się nie podpinał).
+        session.setDigimode(carrier, mod, info?.lowCut, info?.highCut)
+    }
 
     val muted = audioPipeline.userMuted
     val volume = audioPipeline.volume
@@ -405,6 +422,13 @@ class ReceiverViewModel @Inject constructor(
 
     fun setMode(modulation: String) {
         val info = session.modes.value.firstOrNull { it.modulation == modulation }
+        // Jeśli to digimode (np. z zakładki/ulubionych „2m packet"), nie wysyłaj go jako
+        // primary mod (serwer odrzuca „unsupported demodulator") — włącz jako secondary
+        // na właściwym nośniku.
+        if (info != null && !info.analog) {
+            setDigimode(modulation)
+            return
+        }
         session.setDsp(mod = modulation, lowCut = info?.lowCut, highCut = info?.highCut)
     }
 

@@ -93,6 +93,8 @@ class OwrxSession @Inject constructor(
         val lowCut: Int?,
         val highCut: Int?,
         val analog: Boolean,
+        // dla digimodów: nazwy nośników primary, na których działają (np. packet=["empty"], ft8=["usb"])
+        val underlying: List<String> = emptyList(),
     )
 
     private val _modes = MutableStateFlow<List<ModeInfo>>(emptyList())
@@ -199,6 +201,27 @@ class OwrxSession @Inject constructor(
         _secondaryMod.value = mod
         _digiMessages.value = emptyList()
         send(ClientCommand.dspParams(mapOf("secondary_mod" to (mod ?: false), "secondary_offset_freq" to 0)))
+    }
+
+    /**
+     * Włącz digimode: nośnik analogowy (primary `mod`) ORAZ dekoder wtórny `secondary_mod`
+     * w JEDNEJ wiadomości dspcontrol — tak robi web-klient OWRX (Demodulator.set()). Wysyłanie
+     * osobno potrafi zostawić dekoder wtórny niepodpięty (primary się przełącza, ale digimode
+     * nie dekoduje).
+     */
+    fun setDigimode(carrier: String, secondaryMod: String, lowCut: Int?, highCut: Int?) {
+        val d = _desired.value
+        _desired.value = d.copy(mod = carrier, lowCut = lowCut ?: d.lowCut, highCut = highCut ?: d.highCut)
+        _secondaryMod.value = secondaryMod
+        _digiMessages.value = emptyList()
+        val params = buildMap<String, Any?> {
+            put("mod", carrier)
+            lowCut?.let { put("low_cut", it) }
+            highCut?.let { put("high_cut", it) }
+            put("secondary_mod", secondaryMod)
+            put("secondary_offset_freq", 0)
+        }
+        send(ClientCommand.dspParams(params))
     }
 
     private fun formatDigiMessage(value: kotlinx.serialization.json.JsonElement): String? {
@@ -370,6 +393,8 @@ class OwrxSession @Inject constructor(
                 lowCut = (bandpass?.get("low_cut") as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull()?.toInt(),
                 highCut = (bandpass?.get("high_cut") as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull()?.toInt(),
                 analog = prim("type")?.content == "analog",
+                underlying = (o["underlying"] as? kotlinx.serialization.json.JsonArray)
+                    ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content } ?: emptyList(),
             )
         }
     } catch (e: Exception) {
