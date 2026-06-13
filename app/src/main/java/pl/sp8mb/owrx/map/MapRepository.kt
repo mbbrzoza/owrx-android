@@ -39,14 +39,21 @@ class MapRepository @Inject constructor(
         val lat: Double,
         val lon: Double,
         val mode: String?,
+        val comment: String?,
+        val isLocator: Boolean,
         val lastSeen: Long,
     )
+
+    data class ReceiverInfo(val lat: Double, val lon: Double, val name: String?, val location: String?)
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _positions = MutableStateFlow<Map<String, Position>>(emptyMap())
     val positions: StateFlow<Map<String, Position>> = _positions.asStateFlow()
+
+    private val _receiver = MutableStateFlow<ReceiverInfo?>(null)
+    val receiver: StateFlow<ReceiverInfo?> = _receiver.asStateFlow()
 
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
@@ -106,7 +113,22 @@ class MapRepository @Inject constructor(
         } catch (e: Exception) {
             null
         } ?: return
-        if ((obj["type"] as? JsonPrimitive)?.content != "update") return
+        val type = (obj["type"] as? JsonPrimitive)?.content
+        if (type == "receiver_details") {
+            val v = obj["value"] as? JsonObject
+            val gps = v?.get("receiver_gps") as? JsonObject
+            val lat = (gps?.get("lat") as? JsonPrimitive)?.content?.toDoubleOrNull()
+            val lon = (gps?.get("lon") as? JsonPrimitive)?.content?.toDoubleOrNull()
+            if (lat != null && lon != null) {
+                _receiver.value = ReceiverInfo(
+                    lat, lon,
+                    (v["receiver_name"] as? JsonPrimitive)?.content,
+                    (v["receiver_location"] as? JsonPrimitive)?.content,
+                )
+            }
+            return
+        }
+        if (type != "update") return
         val records = obj["value"] as? JsonArray ?: return
         val now = System.currentTimeMillis()
         val updated = _positions.value.toMutableMap()
@@ -121,7 +143,10 @@ class MapRepository @Inject constructor(
                 callsign = callsign,
                 lat = lat,
                 lon = lon,
-                mode = (r["mode"] as? JsonPrimitive)?.content,
+                mode = (r["mode"] as? JsonPrimitive)?.content
+                    ?: (loc?.get("mode") as? JsonPrimitive)?.content,
+                comment = (loc?.get("comment") as? JsonPrimitive)?.content,
+                isLocator = (loc?.get("type") as? JsonPrimitive)?.content == "locator",
                 lastSeen = now,
             )
         }
@@ -131,6 +156,6 @@ class MapRepository @Inject constructor(
     }
 
     companion object {
-        const val TTL_MS = 30 * 60 * 1000L
+        const val TTL_MS = 60 * 60 * 1000L
     }
 }

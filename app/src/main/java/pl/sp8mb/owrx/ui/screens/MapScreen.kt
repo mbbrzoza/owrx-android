@@ -1,5 +1,12 @@
 package pl.sp8mb.owrx.ui.screens
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.drawable.BitmapDrawable
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -8,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -15,27 +23,35 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import org.osmdroid.config.Configuration
+import org.osmdroid.events.MapListener
+import org.osmdroid.events.ScrollEvent
+import org.osmdroid.events.ZoomEvent
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import pl.sp8mb.owrx.map.MapRepository
 import pl.sp8mb.owrx.ui.vm.MapViewModel
 
 @Composable
 fun MapScreen(vm: MapViewModel = hiltViewModel()) {
-    val context = LocalContext.current
     val positions by vm.positions.collectAsState()
+    val receiver by vm.receiver.collectAsState()
     val connected by vm.connected.collectAsState()
-    var mapView by remember { mutableStateOf<MapView?>(null) }
+    var holder by remember { mutableStateOf<ClusterMapHolder?>(null) }
 
     DisposableEffect(Unit) {
         vm.connect()
         onDispose { vm.disconnect() }
+    }
+
+    // Re-render markers when data changes (the map move/zoom path is handled by the holder).
+    LaunchedEffect(positions, receiver, holder) {
+        holder?.setData(positions.values, receiver)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -49,28 +65,14 @@ fun MapScreen(vm: MapViewModel = hiltViewModel()) {
                 MapView(ctx).apply {
                     setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)
+                    isTilesScaledToDpi = true
                     controller.setZoom(6.0)
-                    controller.setCenter(GeoPoint(52.0, 19.0)) // Poland
-                    mapView = this
+                    controller.setCenter(GeoPoint(52.0, 19.0)) // Poland fallback until receiver arrives
+                    holder = ClusterMapHolder(this)
                 }
             },
             modifier = Modifier.fillMaxSize(),
         )
-
-        // refresh markers when positions change
-        mapView?.let { mv ->
-            mv.overlays.clear()
-            positions.values.forEach { p ->
-                mv.overlays.add(
-                    Marker(mv).apply {
-                        position = GeoPoint(p.lat, p.lon)
-                        title = p.callsign + (p.mode?.let { " ($it)" } ?: "")
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    }
-                )
-            }
-            mv.invalidate()
-        }
 
         Surface(
             modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
@@ -83,4 +85,212 @@ fun MapScreen(vm: MapViewModel = hiltViewModel()) {
             )
         }
     }
+}
+
+/**
+ * Holds the MapView and renders position reports as small, age-coloured markers with
+ * pixel-grid clustering (dense areas collapse into a counted bubble; tapping a cluster
+ * zooms in). Re-clusters on map move/zoom (debounced) and on data change. Markers are
+ * tappable for info (callsign, mode, age, comment). Receiver shown as a distinct marker.
+ */
+private class ClusterMapHolder(val mv: MapView) {
+    private var positions: Collection<MapRepository.Position> = emptyList()
+    private var receiver: MapRepository.ReceiverInfo? = null
+    private var centeredOnReceiver = false
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var pending: Runnable? = null
+
+    // icon caches — avoid regenerating identical bitmaps each redraw
+    private val dotCache = HashMap<Long, BitmapDrawable>()
+    private val clusterCache = HashMap<Int, BitmapDrawable>()
+    private var receiverIcon: BitmapDrawable? = null
+
+    init {
+        mv.addMapListener(object : MapListener {
+            override fun onScroll(event: ScrollEvent?): Boolean { scheduleRender(); return false }
+            override fun onZoom(event: ZoomEvent?): Boolean { scheduleRender(); return false }
+        })
+    }
+
+    fun setData(p: Collection<MapRepository.Position>, r: MapRepository.ReceiverInfo?) {
+        positions = p
+        receiver = r
+        if (!centeredOnReceiver && r != null) {
+            mv.controller.setZoom(8.0)
+            mv.controller.setCenter(GeoPoint(r.lat, r.lon))
+            centeredOnReceiver = true
+        }
+        render()
+    }
+
+    private fun scheduleRender() {
+        pending?.let { handler.removeCallbacks(it) }
+        val r = Runnable { render() }
+        pending = r
+        handler.postDelayed(r, 120)
+    }
+
+    private fun render() {
+        val ctx = mv.context
+        val proj = mv.projection
+        val now = System.currentTimeMillis()
+        val r = 56.0 * ctx.resources.displayMetrics.density
+        val w = mv.width
+        val h = mv.height
+        val margin = 140
+
+        // bucket visible positions into a pixel grid
+        val buckets = HashMap<Long, MutableList<MapRepository.Position>>()
+        for (p in positions) {
+            val pt = proj.toPixels(GeoPoint(p.lat, p.lon), null)
+            if (w > 0 && (pt.x < -margin || pt.x > w + margin || pt.y < -margin || pt.y > h + margin)) continue
+            val gx = Math.floor(pt.x / r).toLong()
+            val gy = Math.floor(pt.y / r).toLong()
+            val key = (gx shl 32) xor (gy and 0xffffffffL)
+            buckets.getOrPut(key) { ArrayList() }.add(p)
+        }
+
+        mv.overlays.clear()
+        for ((_, list) in buckets) {
+            if (list.size == 1) addSingle(list[0], now) else addCluster(list)
+        }
+        receiver?.let { addReceiver(it) }
+        mv.invalidate()
+    }
+
+    private fun addSingle(p: MapRepository.Position, now: Long) {
+        val m = Marker(mv)
+        m.position = GeoPoint(p.lat, p.lon)
+        m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+        m.icon = dotIcon(ageColor(now - p.lastSeen), p.isLocator)
+        m.title = p.callsign + (p.mode?.let { "  [$it]" } ?: "")
+        m.snippet = buildString {
+            append(agoStr(now - p.lastSeen))
+            p.comment?.takeIf { it.isNotBlank() }?.let { append("\n"); append(it.take(180)) }
+        }
+        mv.overlays.add(m)
+    }
+
+    private fun addCluster(list: List<MapRepository.Position>) {
+        var la = 0.0; var lo = 0.0
+        for (p in list) { la += p.lat; lo += p.lon }
+        val m = Marker(mv)
+        m.position = GeoPoint(la / list.size, lo / list.size)
+        m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+        m.icon = clusterIcon(list.size)
+        m.setInfoWindow(null)
+        m.setOnMarkerClickListener { marker, _ ->
+            mv.controller.animateTo(
+                marker.position,
+                (mv.zoomLevelDouble + 2.0).coerceAtMost(mv.maxZoomLevel),
+                400L,
+            )
+            true
+        }
+        mv.overlays.add(m)
+    }
+
+    private fun addReceiver(r: MapRepository.ReceiverInfo) {
+        val icon = receiverIcon ?: BitmapDrawable(mv.context.resources, receiverBitmap(mv.context)).also { receiverIcon = it }
+        val m = Marker(mv)
+        m.position = GeoPoint(r.lat, r.lon)
+        m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+        m.icon = icon
+        m.title = "📡 " + (r.name ?: "Odbiornik")
+        m.snippet = r.location ?: ""
+        mv.overlays.add(m)
+    }
+
+    private fun dotIcon(color: Int, locator: Boolean): BitmapDrawable {
+        val key = (color.toLong() shl 1) or (if (locator) 1L else 0L)
+        return dotCache.getOrPut(key) {
+            BitmapDrawable(mv.context.resources, dotBitmap(mv.context, color, locator))
+        }
+    }
+
+    private fun clusterIcon(count: Int): BitmapDrawable {
+        // bucket counts so we don't make a bitmap per exact number
+        val bucket = when {
+            count < 10 -> count
+            count < 100 -> count / 10 * 10
+            else -> count / 100 * 100
+        }
+        return clusterCache.getOrPut(bucket) {
+            BitmapDrawable(mv.context.resources, clusterBitmap(mv.context, count))
+        }
+    }
+}
+
+// ── icon bitmaps (drawn programmatically — no drawable resources needed) ──
+
+private fun ageColor(ageMs: Long): Int = when {
+    ageMs < 5 * 60_000 -> 0xFF43A047.toInt()   // świeże — zielony
+    ageMs < 20 * 60_000 -> 0xFFFBC02D.toInt()  // żółty
+    ageMs < 40 * 60_000 -> 0xFFFB8C00.toInt()  // pomarańczowy
+    else -> 0xFF9E9E9E.toInt()                  // stare — szary
+}
+
+private fun agoStr(ms: Long): String {
+    val s = ms / 1000
+    return when {
+        s < 60 -> "${s}s temu"
+        s < 3600 -> "${s / 60} min temu"
+        else -> "${s / 3600} h temu"
+    }
+}
+
+private fun dotBitmap(ctx: Context, color: Int, locator: Boolean): Bitmap {
+    val d = ctx.resources.displayMetrics.density
+    val s = (14f * d).toInt().coerceAtLeast(8)
+    val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    p.color = color
+    if (locator) {
+        c.drawRect(s * 0.16f, s * 0.16f, s * 0.84f, s * 0.84f, p)
+        p.style = Paint.Style.STROKE; p.color = 0xFF101010.toInt(); p.strokeWidth = d
+        c.drawRect(s * 0.16f, s * 0.16f, s * 0.84f, s * 0.84f, p)
+    } else {
+        val r = s / 2f
+        c.drawCircle(r, r, r - d, p)
+        p.style = Paint.Style.STROKE; p.color = 0xFF101010.toInt(); p.strokeWidth = d
+        c.drawCircle(r, r, r - d, p)
+    }
+    return bmp
+}
+
+private fun clusterBitmap(ctx: Context, count: Int): Bitmap {
+    val d = ctx.resources.displayMetrics.density
+    val s = ((if (count >= 100) 46f else if (count >= 10) 40f else 34f) * d).toInt()
+    val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    val r = s / 2f
+    val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    p.color = 0xDD1565C0.toInt()
+    c.drawCircle(r, r, r - d, p)
+    p.style = Paint.Style.STROKE; p.color = 0xFFFFFFFF.toInt(); p.strokeWidth = 2f * d
+    c.drawCircle(r, r, r - 2f * d, p)
+    p.style = Paint.Style.FILL; p.color = 0xFFFFFFFF.toInt()
+    p.textAlign = Paint.Align.CENTER
+    val label = if (count >= 1000) "${count / 1000}k+" else count.toString()
+    p.textSize = (if (label.length >= 4) 11f else if (label.length == 3) 13f else 15f) * d
+    val fm = p.fontMetrics
+    c.drawText(label, r, r - (fm.ascent + fm.descent) / 2f, p)
+    return bmp
+}
+
+private fun receiverBitmap(ctx: Context): Bitmap {
+    val d = ctx.resources.displayMetrics.density
+    val s = (24f * d).toInt()
+    val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    val r = s / 2f
+    val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    p.color = 0xFFD32F2F.toInt()
+    c.drawCircle(r, r, r - d, p)
+    p.style = Paint.Style.STROKE; p.color = 0xFFFFFFFF.toInt(); p.strokeWidth = 2.5f * d
+    c.drawCircle(r, r, r - 2.5f * d, p)
+    c.drawCircle(r, r, r * 0.32f, p)
+    return bmp
 }

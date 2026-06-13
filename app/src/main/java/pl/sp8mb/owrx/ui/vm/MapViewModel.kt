@@ -11,6 +11,7 @@ class MapViewModel @Inject constructor(
 ) : ViewModel() {
 
     val positions = repo.positions
+    val receiver = repo.receiver
     val connected = repo.connected
 
     fun connect() = repo.connect()
