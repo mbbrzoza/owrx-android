@@ -194,12 +194,12 @@ private class ClusterMapHolder(val mv: MapView) {
         val h = mv.height
         val margin = 140
 
-        // lokalnie zdekodowane pozycje pokazuj zawsze osobno (nie klastruj) i wyróżnij
-        val locals = ArrayList<MapRepository.Position>()
-        // resztę (sieć odbiorników / bazy) klastruj w siatce pikselowej
+        // Zdekodowane stacje (APRS/FT8/AIS + lokalne) pokazuj ZAWSZE pojedynczo (każda swój symbol);
+        // klastruj tylko warstwy stałe (sieć odbiorników / bazy), bo są gęste.
+        val individuals = ArrayList<MapRepository.Position>()
         val buckets = HashMap<Long, MutableList<MapRepository.Position>>()
         for (p in positions) {
-            if (p.local) { locals.add(p); continue }
+            if (layerOf(p) == MapLayer.DECODED) { individuals.add(p); continue }
             val pt = proj.toPixels(GeoPoint(p.lat, p.lon), null)
             if (w > 0 && (pt.x < -margin || pt.x > w + margin || pt.y < -margin || pt.y > h + margin)) continue
             val gx = Math.floor(pt.x / r).toLong()
@@ -212,7 +212,7 @@ private class ClusterMapHolder(val mv: MapView) {
         for ((_, list) in buckets) {
             if (list.size == 1) addSingle(list[0], now) else addCluster(list)
         }
-        for (p in locals) addLocal(p, now)   // wyróżnione, na wierzchu
+        for (p in individuals) if (p.local) addLocal(p, now) else addSingle(p, now)
         receiver?.let { addReceiver(it) }
         mv.invalidate()
     }
