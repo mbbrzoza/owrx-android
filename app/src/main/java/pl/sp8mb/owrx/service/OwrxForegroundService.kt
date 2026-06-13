@@ -38,6 +38,7 @@ class OwrxForegroundService : LifecycleService() {
         super.onStartCommand(intent, flags, startId)
         when (intent?.action) {
             ACTION_STOP -> {
+                session.disconnect()   // zamknij WebSocket + audio (inaczej sesja żyje dalej)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
