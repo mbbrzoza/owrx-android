@@ -39,6 +39,7 @@ import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polygon
 import pl.sp8mb.owrx.map.MapRepository
 import pl.sp8mb.owrx.ui.vm.MapViewModel
 
@@ -212,7 +213,11 @@ private class ClusterMapHolder(val mv: MapView) {
         for ((_, list) in buckets) {
             if (list.size == 1) addSingle(list[0], now) else addCluster(list)
         }
-        for (p in individuals) if (p.local) addLocal(p, now) else addSingle(p, now)
+        for (p in individuals) when {
+            p.gridLat != null && p.gridLon != null -> addGrid(p, now)  // lokator → kwadrat siatki
+            p.local -> addLocal(p, now)
+            else -> addSingle(p, now)
+        }
         receiver?.let { addReceiver(it) }
         mv.invalidate()
     }
@@ -260,6 +265,30 @@ private class ClusterMapHolder(val mv: MapView) {
             p.comment?.takeIf { it.isNotBlank() }?.let { append("\n"); append(it.take(180)) }
         }
         mv.overlays.add(m)
+    }
+
+    // Kwadrat siatki Maidenhead (FT8/WSPR/...) jako półprzezroczysty prostokąt z info.
+    private fun addGrid(p: MapRepository.Position, now: Long) {
+        val gLat = p.gridLat ?: return
+        val gLon = p.gridLon ?: return
+        val d = mv.context.resources.displayMetrics.density
+        val poly = Polygon(mv)
+        poly.points = listOf(
+            GeoPoint(p.lat - gLat / 2, p.lon - gLon / 2),
+            GeoPoint(p.lat - gLat / 2, p.lon + gLon / 2),
+            GeoPoint(p.lat + gLat / 2, p.lon + gLon / 2),
+            GeoPoint(p.lat + gLat / 2, p.lon - gLon / 2),
+        )
+        poly.fillPaint.color = 0x33AB47BC.toInt()       // półprzezroczysty fiolet
+        poly.outlinePaint.color = 0xCCAB47BC.toInt()
+        poly.outlinePaint.strokeWidth = 2f * d
+        poly.title = p.callsign + (p.mode?.let { "  [$it]" } ?: "")
+        poly.snippet = buildString {
+            append(agoStr(now - p.lastSeen))
+            p.comment?.takeIf { it.isNotBlank() }?.let { append(" · "); append(it) }
+        }
+        poly.setOnClickListener { polygon, _, _ -> polygon.showInfoWindow(); true }
+        mv.overlays.add(poly)
     }
 
     private fun addReceiver(r: MapRepository.ReceiverInfo) {

@@ -49,6 +49,9 @@ class MapRepository @Inject constructor(
         val symIndex: Int? = null,
         val symTableIndex: Int? = null,
         val course: Float? = null,    // kurs (heading) — do obrotu ikony
+        // lokator Maidenhead → kwadrat siatki (rozpiętość w stopniach; lat/lon = środek)
+        val gridLat: Double? = null,
+        val gridLon: Double? = null,
     )
 
     data class ReceiverInfo(val lat: Double, val lon: Double, val name: String?, val location: String?)
@@ -175,8 +178,15 @@ class MapRepository @Inject constructor(
             val r = rec as? JsonObject ?: continue
             val callsign = (r["callsign"] as? JsonPrimitive)?.content ?: continue
             val loc = r["location"] as? JsonObject
-            val lat = (loc?.get("lat") as? JsonPrimitive)?.content?.toDoubleOrNull()
-            val lon = (loc?.get("lon") as? JsonPrimitive)?.content?.toDoubleOrNull()
+            var lat = (loc?.get("lat") as? JsonPrimitive)?.content?.toDoubleOrNull()
+            var lon = (loc?.get("lon") as? JsonPrimitive)?.content?.toDoubleOrNull()
+            var gLat: Double? = null
+            var gLon: Double? = null
+            if (lat == null || lon == null) {
+                // FT8/WSPR/... podają lokator Maidenhead zamiast lat/lon → kwadrat siatki
+                val g = (loc?.get("locator") as? JsonPrimitive)?.content?.let { locatorToGrid(it) }
+                if (g != null) { lat = g[0]; lon = g[1]; gLat = g[2]; gLon = g[3] }
+            }
             if (lat == null || lon == null) continue
             val sym = loc?.get("symbol") as? JsonObject
             newOnes.add(Position(
@@ -185,7 +195,8 @@ class MapRepository @Inject constructor(
                 lon = lon,
                 mode = (r["mode"] as? JsonPrimitive)?.content
                     ?: (loc?.get("mode") as? JsonPrimitive)?.content,
-                comment = (loc?.get("comment") as? JsonPrimitive)?.content,
+                comment = (loc?.get("comment") as? JsonPrimitive)?.content
+                    ?: (loc?.get("locator") as? JsonPrimitive)?.content?.let { "lokator $it" },
                 isLocator = (loc?.get("type") as? JsonPrimitive)?.content == "locator",
                 lastSeen = now,
                 symTable = (sym?.get("table") as? JsonPrimitive)?.content,
@@ -193,9 +204,28 @@ class MapRepository @Inject constructor(
                 symTableIndex = (sym?.get("tableindex") as? JsonPrimitive)?.content?.toIntOrNull(),
                 course = (loc?.get("course") as? JsonPrimitive)?.content?.toFloatOrNull()
                     ?: (r["course"] as? JsonPrimitive)?.content?.toFloatOrNull(),
+                gridLat = gLat, gridLon = gLon,
             ))
         }
         mergePositions(newOnes)
+    }
+
+    // Maidenhead (np. "JO10" / "KO11if") → [centerLat, centerLon, spanLat, spanLon] w stopniach.
+    private fun locatorToGrid(raw: String): DoubleArray? {
+        val s = raw.trim().uppercase()
+        if (s.length < 4) return null
+        if (s[0] !in 'A'..'R' || s[1] !in 'A'..'R' || !s[2].isDigit() || !s[3].isDigit()) return null
+        var lon = -180.0 + (s[0] - 'A') * 20.0 + (s[2] - '0') * 2.0
+        var lat = -90.0 + (s[1] - 'A') * 10.0 + (s[3] - '0') * 1.0
+        var spanLon = 2.0
+        var spanLat = 1.0
+        if (s.length >= 6 && s[4] in 'A'..'X' && s[5] in 'A'..'X') {
+            lon += (s[4] - 'A') * (2.0 / 24.0)
+            lat += (s[5] - 'A') * (1.0 / 24.0)
+            spanLon = 2.0 / 24.0
+            spanLat = 1.0 / 24.0
+        }
+        return doubleArrayOf(lat + spanLat / 2.0, lon + spanLon / 2.0, spanLat, spanLon)
     }
 
     companion object {
