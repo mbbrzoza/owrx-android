@@ -24,7 +24,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,9 +61,10 @@ fun MapScreen(vm: MapViewModel = hiltViewModel()) {
     var holder by remember { mutableStateOf<ClusterMapHolder?>(null) }
 
     // Warstwy „stałe" (sieć odbiorników, bazy) domyślnie UKRYTE — żeby nie zaciemniać mapy;
-    // zdekodowane stacje (APRS/FT8/local) zawsze widoczne. Wybór zapamiętywany.
-    var showReceivers by rememberSaveable { mutableStateOf(false) }
-    var showDatabase by rememberSaveable { mutableStateOf(false) }
+    // zdekodowane stacje (APRS/FT8/local) zawsze widoczne. Celowo `remember` (nie Saveable):
+    // przy każdym wejściu na mapę startują wyłączone, włączenie nie „przykleja się".
+    var showReceivers by remember { mutableStateOf(false) }
+    var showDatabase by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         vm.connect()
