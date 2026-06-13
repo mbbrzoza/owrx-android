@@ -73,7 +73,8 @@ agregat serwera) **oraz lokalnie zdekodowane ramki** (APRS/AIS… wyłuskane z
 `secondary_demod` — co sam dekodujesz, ląduje na mapie).
 - **Prawdziwe ikony APRS** (sprite symboli, wycinane po `index`/`tableindex` jak
   web) per stacja; **samoloty** obrócone wg kursu dla trybów lotniczych
-  (ADSB/VDL2/HFDL); marker odbiornika z auto-centrowaniem.
+  (ADSB/VDL2/HFDL); **kwadraty siatki** dla lokatorów Maidenhead (FT8/WSPR);
+  marker odbiornika z auto-centrowaniem.
 - **Klastrowanie** gęstych warstw stałych z licznikiem (tap = zoom); **zdekodowane
   stacje zawsze pojedynczo** (widać symbol każdej); lokalne dekody wyróżnione.
 - **Przełączniki warstw** — sieć innych odbiorników (KiwiSDR/OpenWebRX/WebSDR) i
