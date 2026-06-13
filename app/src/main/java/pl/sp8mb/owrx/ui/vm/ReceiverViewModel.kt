@@ -447,7 +447,10 @@ class ReceiverViewModel @Inject constructor(
             BookmarkItem(
                 name = s("name") ?: s("mode") ?: "$freq",
                 frequency = freq,
-                modulation = s("modulation") ?: s("underlying"),
+                // bookmarki mają "modulation"; dial_frequencies (np. {freq, mode:"packet"})
+                // mają tylko "mode" — bez tego tag „packet" miał modulation=null i tap nie
+                // przełączał trybu.
+                modulation = s("modulation") ?: s("mode") ?: s("underlying"),
             )
         }
     }

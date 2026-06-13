@@ -82,6 +82,12 @@ fun ReceiverScreen(vm: ReceiverViewModel = hiltViewModel()) {
     var showDigi by remember { mutableStateOf(false) }
     var waterfall by remember { mutableStateOf<WaterfallView?>(null) }
 
+    // Panel digi pokazuj zawsze gdy digimode staje się aktywny — niezależnie czy włączono
+    // go z pickera DIGI, zakładki na wodospadzie czy ulubionych. „Ukryj" nadal działa
+    // (do następnej aktywacji).
+    val activeSecondary by vm.secondaryMod.collectAsState()
+    LaunchedEffect(activeSecondary) { if (activeSecondary != null) showDigi = true }
+
     LaunchedEffect(waterfall) {
         val view = waterfall ?: return@LaunchedEffect
         vm.fft.collect { view.addFrame(it) }
