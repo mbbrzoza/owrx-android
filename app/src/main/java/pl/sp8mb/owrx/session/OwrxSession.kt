@@ -110,6 +110,8 @@ class OwrxSession @Inject constructor(
     data class DecodedPosition(
         val callsign: String, val lat: Double, val lon: Double,
         val mode: String?, val comment: String?,
+        val symTable: String? = null, val symIndex: Int? = null,
+        val symTableIndex: Int? = null, val course: Float? = null,
     )
     private val _decodedPositions = MutableSharedFlow<DecodedPosition>(extraBufferCapacity = 128)
     val decodedPositions: SharedFlow<DecodedPosition> = _decodedPositions.asSharedFlow()
@@ -259,7 +261,13 @@ class OwrxSession @Inject constructor(
         val lon = s("lon")?.toDoubleOrNull() ?: return null
         if (lat == 0.0 && lon == 0.0) return null
         val callsign = s("source") ?: s("item") ?: s("object") ?: s("callsign") ?: return null
-        return DecodedPosition(callsign, lat, lon, s("mode"), s("comment") ?: s("message"))
+        val sym = o["symbol"] as? JsonObject
+        fun ss(k: String) = (sym?.get(k) as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+        return DecodedPosition(
+            callsign, lat, lon, s("mode"), s("comment") ?: s("message"),
+            symTable = ss("table"), symIndex = ss("index")?.toIntOrNull(),
+            symTableIndex = ss("tableindex")?.toIntOrNull(), course = s("course")?.toFloatOrNull(),
+        )
     }
 
     fun sendChat(text: String, name: String?) {

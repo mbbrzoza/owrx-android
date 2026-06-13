@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.drawable.BitmapDrawable
 import android.os.Handler
 import android.os.Looper
@@ -44,6 +45,7 @@ import pl.sp8mb.owrx.ui.vm.MapViewModel
 private enum class MapLayer { RECEIVERS, DATABASE, DECODED }
 private val RECEIVER_MODES = setOf("KiwiSDR", "OpenWebRX", "WebSDR")
 private val DATABASE_MODES = setOf("Stations", "Repeaters")
+private val AIRCRAFT_MODES = setOf("ADSB", "VDL2", "HFDL", "Mode-S", "Aircraft")
 private fun layerOf(p: MapRepository.Position): MapLayer = when {
     p.local -> MapLayer.DECODED
     p.mode in RECEIVER_MODES -> MapLayer.RECEIVERS
@@ -154,6 +156,9 @@ private class ClusterMapHolder(val mv: MapView) {
     private val clusterCache = HashMap<Int, BitmapDrawable>()
     private var receiverIcon: BitmapDrawable? = null
     private var localIcon: BitmapDrawable? = null
+    private var aprsSheets: Array<Bitmap?>? = null
+    private val aprsCache = HashMap<Long, BitmapDrawable>()
+    private val aircraftCache = HashMap<Int, BitmapDrawable>()
 
     init {
         mv.addMapListener(object : MapListener {
@@ -216,7 +221,7 @@ private class ClusterMapHolder(val mv: MapView) {
         val m = Marker(mv)
         m.position = GeoPoint(p.lat, p.lon)
         m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-        m.icon = dotIcon(ageColor(now - p.lastSeen), p.isLocator)
+        m.icon = iconFor(p, now)
         m.title = p.callsign + (p.mode?.let { "  [$it]" } ?: "")
         m.snippet = buildString {
             append(agoStr(now - p.lastSeen))
@@ -245,11 +250,10 @@ private class ClusterMapHolder(val mv: MapView) {
     }
 
     private fun addLocal(p: MapRepository.Position, now: Long) {
-        val icon = localIcon ?: BitmapDrawable(mv.context.resources, localBitmap(mv.context)).also { localIcon = it }
         val m = Marker(mv)
         m.position = GeoPoint(p.lat, p.lon)
         m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-        m.icon = icon
+        m.icon = iconFor(p, now)   // symbol APRS jeśli jest, inaczej wyróżnik magenta
         m.title = p.callsign + (p.mode?.let { "  [$it]" } ?: "")
         m.snippet = buildString {
             append("zdekodowane lokalnie · " + agoStr(now - p.lastSeen))
@@ -267,6 +271,68 @@ private class ClusterMapHolder(val mv: MapView) {
         m.title = "📡 " + (r.name ?: "Odbiornik")
         m.snippet = r.location ?: ""
         mv.overlays.add(m)
+    }
+
+    // Wybór ikony markera: symbol APRS (sprite) → samolot (tryby lotnicze) → wyróżnik local → kropka.
+    private fun iconFor(p: MapRepository.Position, now: Long): BitmapDrawable = when {
+        p.symIndex != null -> aprsIcon(p.symTable ?: "/", p.symIndex!!, p.symTableIndex ?: 0)
+        p.mode in AIRCRAFT_MODES -> aircraftIcon(p.course)
+        p.local -> localIcon ?: BitmapDrawable(mv.context.resources, localBitmap(mv.context)).also { localIcon = it }
+        else -> dotIcon(ageColor(now - p.lastSeen), p.isLocator)
+    }
+
+    private fun sheets(): Array<Bitmap?> {
+        aprsSheets?.let { return it }
+        val arr = arrayOfNulls<Bitmap>(3)
+        for (i in 0..2) {
+            try {
+                mv.context.assets.open("aprs-symbols/aprs-symbols-24-$i.png").use {
+                    arr[i] = android.graphics.BitmapFactory.decodeStream(it)
+                }
+            } catch (e: Exception) { /* brak sprite → fallback w aprsIcon */ }
+        }
+        aprsSheets = arr
+        return arr
+    }
+
+    // Wytnij symbol APRS z arkusza (16 kol × 24px) wg index; nałóż overlay (arkusz 2) wg tableindex
+    // gdy tablica to znak overlay; przeskaluj do rozmiaru dp. Jak web (AprsMarker.js).
+    private fun aprsIcon(table: String, index: Int, tableIndex: Int): BitmapDrawable {
+        val key = (table.hashCode().toLong() shl 40) xor (index.toLong() shl 16) xor tableIndex.toLong()
+        aprsCache[key]?.let { return it }
+        val sh = sheets()
+        val base = if (table == "/") sh[0] else sh[1]
+        val d = mv.context.resources.displayMetrics.density
+        val out: Bitmap = if (base == null || index < 0 || (index / 16) * 24 + 24 > base.height) {
+            dotBitmap(mv.context, 0xFF1E88E5.toInt(), false)
+        } else {
+            val sx = (index % 16) * 24
+            val sy = (index / 16) * 24
+            var crop = Bitmap.createBitmap(base, sx, sy, 24, 24)
+            if (table != "/" && table != "\\") {
+                val ov = sh[2]
+                if (ov != null && tableIndex >= 0 && (tableIndex / 16) * 24 + 24 <= ov.height) {
+                    val mutable = crop.copy(Bitmap.Config.ARGB_8888, true)
+                    val oc = Bitmap.createBitmap(ov, (tableIndex % 16) * 24, (tableIndex / 16) * 24, 24, 24)
+                    Canvas(mutable).drawBitmap(oc, 0f, 0f, null)
+                    crop = mutable
+                }
+            }
+            val target = (24f * d).toInt().coerceAtLeast(20)
+            Bitmap.createScaledBitmap(crop, target, target, true)
+        }
+        val dr = BitmapDrawable(mv.context.resources, out)
+        aprsCache[key] = dr
+        return dr
+    }
+
+    // Ikona samolotu obrócona wg kursu (tryby ADSB/VDL2/HFDL).
+    private fun aircraftIcon(course: Float?): BitmapDrawable {
+        val bucket = (((course ?: 0f).toInt() % 360 + 360) % 360) / 15 * 15
+        aircraftCache[bucket]?.let { return it }
+        val dr = BitmapDrawable(mv.context.resources, aircraftBitmap(mv.context, bucket.toFloat()))
+        aircraftCache[bucket] = dr
+        return dr
     }
 
     private fun dotIcon(color: Int, locator: Boolean): BitmapDrawable {
@@ -358,6 +424,38 @@ private fun localBitmap(ctx: Context): Bitmap {
     c.drawCircle(r, r, r - d, p)
     p.style = Paint.Style.STROKE; p.color = 0xFFFFFFFF.toInt(); p.strokeWidth = 2f * d
     c.drawCircle(r, r, r - 2f * d, p)
+    return bmp
+}
+
+private fun aircraftBitmap(ctx: Context, course: Float): Bitmap {
+    val d = ctx.resources.displayMetrics.density
+    val s = (24f * d).toInt()
+    val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    c.rotate(course, s / 2f, s / 2f)
+    val cx = s / 2f
+    val path = Path()
+    path.moveTo(cx, s * 0.10f)               // dziób
+    path.lineTo(cx + s * 0.09f, s * 0.50f)
+    path.lineTo(cx + s * 0.42f, s * 0.66f)   // prawe skrzydło
+    path.lineTo(cx + s * 0.42f, s * 0.74f)
+    path.lineTo(cx + s * 0.09f, s * 0.64f)
+    path.lineTo(cx + s * 0.09f, s * 0.84f)
+    path.lineTo(cx + s * 0.20f, s * 0.92f)   // prawy statecznik
+    path.lineTo(cx + s * 0.20f, s * 0.98f)
+    path.lineTo(cx, s * 0.90f)
+    path.lineTo(cx - s * 0.20f, s * 0.98f)
+    path.lineTo(cx - s * 0.20f, s * 0.92f)
+    path.lineTo(cx - s * 0.09f, s * 0.84f)
+    path.lineTo(cx - s * 0.09f, s * 0.64f)
+    path.lineTo(cx - s * 0.42f, s * 0.74f)   // lewe skrzydło
+    path.lineTo(cx - s * 0.42f, s * 0.66f)
+    path.lineTo(cx - s * 0.09f, s * 0.50f)
+    path.close()
+    val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    p.color = 0xFF1565C0.toInt(); c.drawPath(path, p)
+    p.style = Paint.Style.STROKE; p.color = 0xFFFFFFFF.toInt(); p.strokeWidth = d
+    c.drawPath(path, p)
     return bmp
 }
 

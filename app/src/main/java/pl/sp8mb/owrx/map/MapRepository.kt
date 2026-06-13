@@ -44,6 +44,11 @@ class MapRepository @Inject constructor(
         val isLocator: Boolean,
         val lastSeen: Long,
         val local: Boolean = false,   // zdekodowane lokalnie (secondary_demod) — wyróżniane na mapie
+        // symbol APRS (z location.symbol): tablica '/'|'\'|overlay + indeksy w arkuszu sprite
+        val symTable: String? = null,
+        val symIndex: Int? = null,
+        val symTableIndex: Int? = null,
+        val course: Float? = null,    // kurs (heading) — do obrotu ikony
     )
 
     data class ReceiverInfo(val lat: Double, val lon: Double, val name: String?, val location: String?)
@@ -62,6 +67,8 @@ class MapRepository @Inject constructor(
                     callsign = dp.callsign, lat = dp.lat, lon = dp.lon,
                     mode = dp.mode ?: "DECODED", comment = dp.comment,
                     isLocator = false, lastSeen = System.currentTimeMillis(), local = true,
+                    symTable = dp.symTable, symIndex = dp.symIndex,
+                    symTableIndex = dp.symTableIndex, course = dp.course,
                 )))
             }
         }
@@ -171,6 +178,7 @@ class MapRepository @Inject constructor(
             val lat = (loc?.get("lat") as? JsonPrimitive)?.content?.toDoubleOrNull()
             val lon = (loc?.get("lon") as? JsonPrimitive)?.content?.toDoubleOrNull()
             if (lat == null || lon == null) continue
+            val sym = loc?.get("symbol") as? JsonObject
             newOnes.add(Position(
                 callsign = callsign,
                 lat = lat,
@@ -180,6 +188,11 @@ class MapRepository @Inject constructor(
                 comment = (loc?.get("comment") as? JsonPrimitive)?.content,
                 isLocator = (loc?.get("type") as? JsonPrimitive)?.content == "locator",
                 lastSeen = now,
+                symTable = (sym?.get("table") as? JsonPrimitive)?.content,
+                symIndex = (sym?.get("index") as? JsonPrimitive)?.content?.toIntOrNull(),
+                symTableIndex = (sym?.get("tableindex") as? JsonPrimitive)?.content?.toIntOrNull(),
+                course = (loc?.get("course") as? JsonPrimitive)?.content?.toFloatOrNull()
+                    ?: (r["course"] as? JsonPrimitive)?.content?.toFloatOrNull(),
             ))
         }
         mergePositions(newOnes)
