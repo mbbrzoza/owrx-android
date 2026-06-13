@@ -63,6 +63,10 @@ fun TetraScreen(vm: TetraViewModel = hiltViewModel()) {
     val dmoStats by vm.repo.dmoStats.collectAsState()
 
     var tab by remember { mutableIntStateOf(0) }
+    // Stan „pokaż ukryte SSI" trzymany TU (a nie w SsiList), bo SsiList przy częstych
+    // aktualizacjach metadanych bywa restartowany i lokalny remember się resetował
+    // (objaw: „samo się chowa" na ruchliwej, szyfrowanej sieci jak 260-10).
+    var ssiShowHidden by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
 
@@ -154,7 +158,12 @@ fun TetraScreen(vm: TetraViewModel = hiltViewModel()) {
 
         when (tab) {
             0 -> LogList(activity)
-            1 -> SsiList(activeSsis.map { it }, networkEncrypted = network.encrypted)
+            1 -> SsiList(
+                activeSsis.map { it },
+                networkEncrypted = network.encrypted,
+                showHidden = ssiShowHidden,
+                onToggleHidden = { ssiShowHidden = !ssiShowHidden },
+            )
             2 -> LogList(msReg)
             3 -> LogList(sds)
             4 -> LogList(enc)
@@ -204,11 +213,16 @@ private fun LogList(entries: List<LogEntry>) {
 }
 
 @Composable
-private fun SsiList(ssis: List<pl.sp8mb.owrx.tetra.ActiveSsi>, networkEncrypted: Boolean) {
+private fun SsiList(
+    ssis: List<pl.sp8mb.owrx.tetra.ActiveSsi>,
+    networkEncrypted: Boolean,
+    showHidden: Boolean,
+    onToggleHidden: () -> Unit,
+) {
     // Domyślnie ukrywamy aliasy ESI (i adresy w sieci szyfrowanej) — jak panel web.
     // W sieciach typu 260-10 (TEA) wszystkie SSI to aliasy ESI, więc bez tego lista
     // bywała pusta mimo licznika w nagłówku. Stopka pokazuje ile ukryto + pozwala odsłonić.
-    var showHidden by remember { mutableStateOf(false) }
+    // showHidden jest hoistowane do TetraScreen (przeżywa restart SsiList).
     val isVisible = { s: pl.sp8mb.owrx.tetra.ActiveSsi ->
         when (s.category) {
             SsiCategory.REAL -> true
@@ -229,7 +243,7 @@ private fun SsiList(ssis: List<pl.sp8mb.owrx.tetra.ActiveSsi>, networkEncrypted:
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { showHidden = !showHidden }
+                        .clickable { onToggleHidden() }
                         .padding(vertical = 6.dp),
                 )
             }
