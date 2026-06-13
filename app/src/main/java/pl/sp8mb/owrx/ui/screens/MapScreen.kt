@@ -7,9 +7,12 @@ import android.graphics.Paint
 import android.graphics.drawable.BitmapDrawable
 import android.os.Handler
 import android.os.Looper
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -20,6 +23,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +41,16 @@ import org.osmdroid.views.overlay.Marker
 import pl.sp8mb.owrx.map.MapRepository
 import pl.sp8mb.owrx.ui.vm.MapViewModel
 
+private enum class MapLayer { RECEIVERS, DATABASE, DECODED }
+private val RECEIVER_MODES = setOf("KiwiSDR", "OpenWebRX", "WebSDR")
+private val DATABASE_MODES = setOf("Stations", "Repeaters")
+private fun layerOf(p: MapRepository.Position): MapLayer = when {
+    p.local -> MapLayer.DECODED
+    p.mode in RECEIVER_MODES -> MapLayer.RECEIVERS
+    p.mode in DATABASE_MODES -> MapLayer.DATABASE
+    else -> MapLayer.DECODED   // APRS/FT8/AIS/... = zdekodowane stacje
+}
+
 @Composable
 fun MapScreen(vm: MapViewModel = hiltViewModel()) {
     val positions by vm.positions.collectAsState()
@@ -44,14 +58,30 @@ fun MapScreen(vm: MapViewModel = hiltViewModel()) {
     val connected by vm.connected.collectAsState()
     var holder by remember { mutableStateOf<ClusterMapHolder?>(null) }
 
+    // Warstwy „stałe" (sieć odbiorników, bazy) domyślnie UKRYTE — żeby nie zaciemniać mapy;
+    // zdekodowane stacje (APRS/FT8/local) zawsze widoczne. Wybór zapamiętywany.
+    var showReceivers by rememberSaveable { mutableStateOf(false) }
+    var showDatabase by rememberSaveable { mutableStateOf(false) }
+
     DisposableEffect(Unit) {
         vm.connect()
         onDispose { vm.disconnect() }
     }
 
-    // Re-render markers when data changes (the map move/zoom path is handled by the holder).
-    LaunchedEffect(positions, receiver, holder) {
-        holder?.setData(positions.values, receiver)
+    val counts = remember(positions) { positions.values.groupingBy { layerOf(it) }.eachCount() }
+    val filtered = remember(positions, showReceivers, showDatabase) {
+        positions.values.filter {
+            when (layerOf(it)) {
+                MapLayer.RECEIVERS -> showReceivers
+                MapLayer.DATABASE -> showDatabase
+                MapLayer.DECODED -> true
+            }
+        }
+    }
+
+    // Re-render markers when data/filters change (the map move/zoom path is handled by the holder).
+    LaunchedEffect(filtered, receiver, holder) {
+        holder?.setData(filtered, receiver)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -74,12 +104,30 @@ fun MapScreen(vm: MapViewModel = hiltViewModel()) {
             modifier = Modifier.fillMaxSize(),
         )
 
+        // przełączniki warstw (lewy-górny)
+        Row(
+            modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            FilterChip(
+                selected = showReceivers,
+                onClick = { showReceivers = !showReceivers },
+                label = { Text("Odbiorniki ${counts[MapLayer.RECEIVERS] ?: 0}", style = MaterialTheme.typography.labelSmall) },
+            )
+            FilterChip(
+                selected = showDatabase,
+                onClick = { showDatabase = !showDatabase },
+                label = { Text("Bazy ${counts[MapLayer.DATABASE] ?: 0}", style = MaterialTheme.typography.labelSmall) },
+            )
+        }
+
         Surface(
             modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
         ) {
             Text(
-                "${positions.size} pozycji" + if (connected) "" else " (łączenie…)",
+                "${filtered.size} na mapie · zdekod. ${counts[MapLayer.DECODED] ?: 0}" +
+                    if (connected) "" else " (łączenie…)",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             )
@@ -105,6 +153,7 @@ private class ClusterMapHolder(val mv: MapView) {
     private val dotCache = HashMap<Long, BitmapDrawable>()
     private val clusterCache = HashMap<Int, BitmapDrawable>()
     private var receiverIcon: BitmapDrawable? = null
+    private var localIcon: BitmapDrawable? = null
 
     init {
         mv.addMapListener(object : MapListener {
@@ -140,9 +189,12 @@ private class ClusterMapHolder(val mv: MapView) {
         val h = mv.height
         val margin = 140
 
-        // bucket visible positions into a pixel grid
+        // lokalnie zdekodowane pozycje pokazuj zawsze osobno (nie klastruj) i wyróżnij
+        val locals = ArrayList<MapRepository.Position>()
+        // resztę (sieć odbiorników / bazy) klastruj w siatce pikselowej
         val buckets = HashMap<Long, MutableList<MapRepository.Position>>()
         for (p in positions) {
+            if (p.local) { locals.add(p); continue }
             val pt = proj.toPixels(GeoPoint(p.lat, p.lon), null)
             if (w > 0 && (pt.x < -margin || pt.x > w + margin || pt.y < -margin || pt.y > h + margin)) continue
             val gx = Math.floor(pt.x / r).toLong()
@@ -155,6 +207,7 @@ private class ClusterMapHolder(val mv: MapView) {
         for ((_, list) in buckets) {
             if (list.size == 1) addSingle(list[0], now) else addCluster(list)
         }
+        for (p in locals) addLocal(p, now)   // wyróżnione, na wierzchu
         receiver?.let { addReceiver(it) }
         mv.invalidate()
     }
@@ -187,6 +240,20 @@ private class ClusterMapHolder(val mv: MapView) {
                 400L,
             )
             true
+        }
+        mv.overlays.add(m)
+    }
+
+    private fun addLocal(p: MapRepository.Position, now: Long) {
+        val icon = localIcon ?: BitmapDrawable(mv.context.resources, localBitmap(mv.context)).also { localIcon = it }
+        val m = Marker(mv)
+        m.position = GeoPoint(p.lat, p.lon)
+        m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+        m.icon = icon
+        m.title = p.callsign + (p.mode?.let { "  [$it]" } ?: "")
+        m.snippet = buildString {
+            append("zdekodowane lokalnie · " + agoStr(now - p.lastSeen))
+            p.comment?.takeIf { it.isNotBlank() }?.let { append("\n"); append(it.take(180)) }
         }
         mv.overlays.add(m)
     }
@@ -277,6 +344,20 @@ private fun clusterBitmap(ctx: Context, count: Int): Bitmap {
     p.textSize = (if (label.length >= 4) 11f else if (label.length == 3) 13f else 15f) * d
     val fm = p.fontMetrics
     c.drawText(label, r, r - (fm.ascent + fm.descent) / 2f, p)
+    return bmp
+}
+
+private fun localBitmap(ctx: Context): Bitmap {
+    val d = ctx.resources.displayMetrics.density
+    val s = (18f * d).toInt()
+    val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    val r = s / 2f
+    val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    p.color = 0xFFE040FB.toInt()   // magenta — wyraźnie inny od reszty
+    c.drawCircle(r, r, r - d, p)
+    p.style = Paint.Style.STROKE; p.color = 0xFFFFFFFF.toInt(); p.strokeWidth = 2f * d
+    c.drawCircle(r, r, r - 2f * d, p)
     return bmp
 }
 

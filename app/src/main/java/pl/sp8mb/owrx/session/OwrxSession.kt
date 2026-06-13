@@ -106,6 +106,14 @@ class OwrxSession @Inject constructor(
     private val _secondaryMod = MutableStateFlow<String?>(null)
     val secondaryMod: StateFlow<String?> = _secondaryMod.asStateFlow()
 
+    /** Pozycje wyłuskane z lokalnie dekodowanych ramek (secondary_demod APRS/AIS/... z lat/lon). */
+    data class DecodedPosition(
+        val callsign: String, val lat: Double, val lon: Double,
+        val mode: String?, val comment: String?,
+    )
+    private val _decodedPositions = MutableSharedFlow<DecodedPosition>(extraBufferCapacity = 128)
+    val decodedPositions: SharedFlow<DecodedPosition> = _decodedPositions.asSharedFlow()
+
     /** Learned profile bands: fullProfileId → (centerFreq, sampRate). */
     private val _profileRanges = MutableStateFlow<Map<String, Pair<Long, Int>>>(emptyMap())
     val profileRanges: StateFlow<Map<String, Pair<Long, Int>>> = _profileRanges.asStateFlow()
@@ -243,6 +251,17 @@ class OwrxSession @Inject constructor(
         return null
     }
 
+    /** Wyłuskaj pozycję z ramki secondary_demod (APRS/AIS/... niosą lat/lon gdy mają pozycję). */
+    private fun extractPosition(value: kotlinx.serialization.json.JsonElement): DecodedPosition? {
+        val o = value as? JsonObject ?: return null
+        fun s(k: String) = (o[k] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+        val lat = s("lat")?.toDoubleOrNull() ?: return null
+        val lon = s("lon")?.toDoubleOrNull() ?: return null
+        if (lat == 0.0 && lon == 0.0) return null
+        val callsign = s("source") ?: s("item") ?: s("object") ?: s("callsign") ?: return null
+        return DecodedPosition(callsign, lat, lon, s("mode"), s("comment") ?: s("message"))
+    }
+
     fun sendChat(text: String, name: String?) {
         if (text.isBlank()) return
         send(ClientCommand.sendMessage(text.trim(), name))
@@ -374,6 +393,7 @@ class OwrxSession @Inject constructor(
                 formatDigiMessage(msg.value)?.let { line ->
                     _digiMessages.value = (_digiMessages.value + line).takeLast(200)
                 }
+                extractPosition(msg.value)?.let { _decodedPositions.tryEmit(it) }
             }
             is ServerMessage.Clients -> _clientCount.value = msg.count
             is ServerMessage.ChatMessage ->

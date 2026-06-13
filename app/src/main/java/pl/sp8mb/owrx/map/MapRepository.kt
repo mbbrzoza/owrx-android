@@ -33,6 +33,7 @@ class MapRepository @Inject constructor(
     private val serverDao: ServerDao,
     private val prefs: UserPreferences,
     @ApplicationContext private val context: android.content.Context?,
+    session: pl.sp8mb.owrx.session.OwrxSession,
 ) {
     data class Position(
         val callsign: String,
@@ -42,6 +43,7 @@ class MapRepository @Inject constructor(
         val comment: String?,
         val isLocator: Boolean,
         val lastSeen: Long,
+        val local: Boolean = false,   // zdekodowane lokalnie (secondary_demod) — wyróżniane na mapie
     )
 
     data class ReceiverInfo(val lat: Double, val lon: Double, val name: String?, val location: String?)
@@ -51,6 +53,36 @@ class MapRepository @Inject constructor(
 
     private val _positions = MutableStateFlow<Map<String, Position>>(emptyMap())
     val positions: StateFlow<Map<String, Position>> = _positions.asStateFlow()
+
+    init {
+        // Lokalnie zdekodowane ramki (APRS/AIS/... z secondary_demod) → na mapę jako 'local'.
+        scope.launch {
+            session.decodedPositions.collect { dp ->
+                mergePositions(listOf(Position(
+                    callsign = dp.callsign, lat = dp.lat, lon = dp.lon,
+                    mode = dp.mode ?: "DECODED", comment = dp.comment,
+                    isLocator = false, lastSeen = System.currentTimeMillis(), local = true,
+                )))
+            }
+        }
+    }
+
+    /** Scal nowe pozycje z istniejącymi (synchronizowane — dwa źródła: mapa-WS i lokalne dekody). */
+    @Synchronized
+    private fun mergePositions(newOnes: List<Position>) {
+        if (newOnes.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val updated = _positions.value.toMutableMap()
+        for (p in newOnes) {
+            // nie nadpisuj świeżej pozycji 'local' danymi z mapy-WS (zachowaj wyróżnienie)
+            val prev = updated[p.callsign]
+            updated[p.callsign] = if (!p.local && prev?.local == true && now - prev.lastSeen < 120_000) {
+                prev.copy(lat = p.lat, lon = p.lon, lastSeen = p.lastSeen)
+            } else p
+        }
+        updated.entries.removeAll { now - it.value.lastSeen > TTL_MS }
+        _positions.value = updated
+    }
 
     private val _receiver = MutableStateFlow<ReceiverInfo?>(null)
     val receiver: StateFlow<ReceiverInfo?> = _receiver.asStateFlow()
@@ -131,7 +163,7 @@ class MapRepository @Inject constructor(
         if (type != "update") return
         val records = obj["value"] as? JsonArray ?: return
         val now = System.currentTimeMillis()
-        val updated = _positions.value.toMutableMap()
+        val newOnes = ArrayList<Position>()
         for (rec in records) {
             val r = rec as? JsonObject ?: continue
             val callsign = (r["callsign"] as? JsonPrimitive)?.content ?: continue
@@ -139,7 +171,7 @@ class MapRepository @Inject constructor(
             val lat = (loc?.get("lat") as? JsonPrimitive)?.content?.toDoubleOrNull()
             val lon = (loc?.get("lon") as? JsonPrimitive)?.content?.toDoubleOrNull()
             if (lat == null || lon == null) continue
-            updated[callsign] = Position(
+            newOnes.add(Position(
                 callsign = callsign,
                 lat = lat,
                 lon = lon,
@@ -148,11 +180,9 @@ class MapRepository @Inject constructor(
                 comment = (loc?.get("comment") as? JsonPrimitive)?.content,
                 isLocator = (loc?.get("type") as? JsonPrimitive)?.content == "locator",
                 lastSeen = now,
-            )
+            ))
         }
-        // expire stale
-        updated.entries.removeAll { now - it.value.lastSeen > TTL_MS }
-        _positions.value = updated
+        mergePositions(newOnes)
     }
 
     companion object {
